@@ -50,7 +50,7 @@ body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--font-body)}
   background:linear-gradient(180deg,#1d1e1f,#111213);border-radius:2cqw;padding:1.1cqw;
   box-shadow:0 2.4cqw 4cqw -1.4cqw rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.06);user-select:none;-webkit-user-select:none
 }
-@container (max-width:620px){
+@container (max-width:500px){
   .shell{--kh:9cqw; --fl:3.3cqw; --fs-main:3.4cqw; --fs-f:2.45cqw; --fs-g:2.3cqw; --gap:1.1cqw; --rgap:2.6cqw}
   .keys{padding:2.4cqw 1.6cqw 1.4cqw !important}
   .bezel{flex-basis:66cqw !important;margin-left:2cqw !important}
@@ -183,6 +183,35 @@ kbd{font:12px var(--font-mono);border:1px solid var(--line);border-bottom-width:
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}
 
 @media (prefers-reduced-motion:reduce){ .lcd.blink .digits{animation:none;opacity:.6} .key{transition:none} }
+
+/* ---------- look modelled on the reference screenshot ---------- */
+.shell{--kh:6.7cqw; --fl:2.5cqw; --fs-main:2.85cqw; --fs-f:1.75cqw; --fs-g:1.95cqw; --gap:1.9cqw; --rgap:1.5cqw;
+  background:linear-gradient(180deg,#444446,#353537);padding:1cqw}
+@container (max-width:500px){ .shell{--kh:9.4cqw; --fl:3.4cqw; --fs-main:3.9cqw; --fs-f:2.45cqw; --fs-g:2.7cqw; --gap:1cqw; --rgap:2.4cqw} }
+.deck{background:linear-gradient(180deg,#dedede,#cdcdcd);border-radius:.6cqw .6cqw 0 0;box-shadow:inset 0 -.25cqw 0 rgba(0,0,0,.12);padding:2.1cqw 3cqw 2.4cqw}
+.bezel{flex:0 0 51cqw;margin-left:12cqw;background:#a3a38c;border:.2cqw solid #85856f;border-radius:.6cqw;padding:1cqw;box-shadow:inset 0 0 0 .15cqw #c3c3ab}
+.lcd{background:#b1b59b;box-shadow:inset 0 .2cqw .5cqw rgba(0,0,0,.12);border-radius:.4cqw;padding:1.3cqw 2.2cqw .7cqw}
+.seg,.dpd{fill:transparent}
+.plate{margin-top:1cqw;background:#dadada;padding:.55cqw;border-radius:.5cqw;box-shadow:none}
+.keys{background:#2f2f30;border-radius:.3cqw;padding:1.3cqw 2.4cqw .9cqw}
+.flab{font:700 var(--fs-f)/var(--fl) var(--font-body);color:#ffd21a;letter-spacing:0}
+.key{border-radius:.55cqw;background:#3a3a3c;color:#f4f4f4;font-family:var(--font-body);
+  box-shadow:0 0 0 .32cqw #101011,inset 0 0 0 .2cqw #5d5d60}
+.key .face{margin:.4cqw .5cqw 0;background:linear-gradient(180deg,#4f4f52,#47474a);box-shadow:none;border-radius:.3cqw;font-weight:400;font-size:var(--fs-main)}
+.key .front{color:#2ec4ff;font-weight:400;font-size:var(--fs-g);font-family:var(--font-body)}
+.key.kf{background:#cfad00} .key.kf .face{background:#ffdd00;color:#1d1a08;font-weight:400;font-family:var(--font-body)}
+.key.kg{background:#0a89c6} .key.kg .face{background:#12adf0;color:#05202f;font-weight:400;font-family:var(--font-body)}
+.key:active,.key.down{transform:translateY(.2cqw);box-shadow:0 0 0 .32cqw #101011,inset 0 0 0 .2cqw #5d5d60;filter:brightness(1.18)}
+.clear{border-color:#ffd21a;margin:-.9cqw 1.4cqw 0}
+.clear span{color:#ffd21a;background:#2f2f30;font:700 1.35cqw/1 var(--font-body);letter-spacing:.04em}
+.brand{color:#d4d4d4} .brand::before{background:#d4d4d4}
+
+/* phone held sideways (and the installed app): the calculator fills the screen */
+@media (orientation:landscape) and (max-height:560px){
+  .wrap{padding-block:0 32px;gap:12px;padding-inline:max(8px,env(safe-area-inset-left,0px)) max(8px,env(safe-area-inset-right,0px))}
+  .top{display:none}
+  .calc{max-width:none;width:min(100%,calc((100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)) * var(--ratio,1.46)))}
+}
 </style>
 
 <style>
@@ -1151,8 +1180,8 @@ function displayCells(){
 
 /* build the 7-segment LCD */
 const NS='http://www.w3.org/2000/svg';
-const hs=(x1,x2,y,t=2.7)=>`${x1},${y} ${x1+t},${y-t} ${x2-t},${y-t} ${x2},${y} ${x2-t},${y+t} ${x1+t},${y+t}`;
-const vs=(x,y1,y2,t=2.7)=>`${x},${y1} ${x+t},${y1+t} ${x+t},${y2-t} ${x},${y2} ${x-t},${y2-t} ${x-t},${y1+t}`;
+const hs=(x1,x2,y,t=3.2)=>`${x1},${y} ${x1+t},${y-t} ${x2-t},${y-t} ${x2},${y} ${x2-t},${y+t} ${x1+t},${y+t}`;
+const vs=(x,y1,y2,t=3.2)=>`${x},${y1} ${x+t},${y1+t} ${x+t},${y2-t} ${x},${y2} ${x-t},${y2-t} ${x-t},${y1+t}`;
 const SEGS={a:hs(8.5,27.5,5),b:vs(30,7,27.5),c:vs(30,30.5,51),d:hs(8.5,27.5,53),e:vs(6,30.5,51),f:vs(6,7,27.5),g:hs(8.5,27.5,29)};
 const cellEls=[];
 (function buildLCD(){
