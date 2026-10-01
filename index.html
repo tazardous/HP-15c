@@ -1,0 +1,1351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#16181a">
+<meta name="description" content="RPN-15: a keystroke-compatible HP-15C emulator with complex numbers, matrices, programming, SOLVE and integration.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>RPN-15 Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: the calculator is the hero object; working panels (examples, stack, program memory, keys) sit in an auto-fit grid beneath it */
+:root{
+  --bg:#e6e8e5; --fg:#1b1e21; --muted:#5a6167; --panel:#f5f6f3; --line:#d1d5cf; --accent:#9a600c; --gacc:#2c6a9c; --hi:rgba(227,165,60,.22);
+  --font-body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+  --font-key:'Barlow Condensed','Arial Narrow',sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+  /* the calculator is a physical object, so its colors are fixed in both themes */
+  --c-deck:#161719; --c-key:#44474c; --c-key2:#323539; --c-front:#222427; --c-ink:#f2f1eb;
+  --c-f:#d9a945; --c-g:#4fa8e6; --c-seg:#262a27;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ --bg:#131517; --fg:#e5e6e2; --muted:#9aa1a7; --panel:#1b1e21; --line:#2d3136; --accent:#e8ac48; --gacc:#86c0ee; --hi:rgba(227,165,60,.16); color-scheme:dark }
+}
+:root[data-theme="dark"]{ --bg:#131517; --fg:#e5e6e2; --muted:#9aa1a7; --panel:#1b1e21; --line:#2d3136; --accent:#e8ac48; --gacc:#86c0ee; --hi:rgba(227,165,60,.16); color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--font-body)}
+.wrap{max-width:1080px;margin:0 auto;padding-inline:16px;padding-block:28px 56px;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 24px}
+.top h1{margin:0;font:700 32px/1 var(--font-key);letter-spacing:.03em}
+.top h1 b{color:var(--accent)}
+.top p{margin:0;color:var(--muted);max-width:62ch;text-wrap:pretty}
+
+/* ---------- calculator ---------- */
+.calc{container-type:inline-size;width:100%;max-width:940px;margin-inline:auto;perspective:2400px}
+.flip{position:relative;transform-style:preserve-3d;transition:transform .7s cubic-bezier(.4,.1,.2,1)}
+.flip.over{transform:rotateY(180deg)}
+.face-front,.face-back{backface-visibility:hidden;-webkit-backface-visibility:hidden}
+.face-back{position:absolute;inset:0;transform:rotateY(180deg)}
+.shell{
+  --kh:6.1cqw; --fl:2.3cqw; --fs-main:2.3cqw; --fs-f:1.6cqw; --fs-g:1.45cqw; --gap:2.1cqw; --rgap:1.6cqw;
+  background:linear-gradient(180deg,#1d1e1f,#111213);border-radius:2cqw;padding:1.1cqw;
+  box-shadow:0 2.4cqw 4cqw -1.4cqw rgba(0,0,0,.55),inset 0 0 0 1px rgba(255,255,255,.06);user-select:none;-webkit-user-select:none
+}
+@container (max-width:620px){
+  .shell{--kh:9cqw; --fl:3.3cqw; --fs-main:3.4cqw; --fs-f:2.45cqw; --fs-g:2.3cqw; --gap:1.1cqw; --rgap:2.6cqw}
+  .keys{padding:2.4cqw 1.6cqw 1.4cqw !important}
+  .bezel{flex-basis:66cqw !important;margin-left:2cqw !important}
+  .ann{font-size:1.9cqw !important;height:2cqw !important}
+  .clear{margin-top:-1.9cqw !important;height:1.2cqw !important}
+  .clear span{font-size:2cqw !important}
+  .brand{font-size:2.2cqw !important}
+}
+/* brushed-metal top band */
+.deck{display:flex;align-items:center;gap:3cqw;padding:2.6cqw 3.2cqw 2.8cqw;border-radius:1.2cqw 1.2cqw .3cqw .3cqw;
+  background:
+    repeating-linear-gradient(90deg,rgba(255,255,255,.07) 0 1px,rgba(0,0,0,.035) 1px 2px,rgba(255,255,255,0) 2px 4px),
+    linear-gradient(180deg,#dfe1e2 0%,#c3c6c8 38%,#a8acaf 100%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 -.3cqw .4cqw rgba(0,0,0,.25)}
+.bezel{flex:0 0 57cqw;margin-left:9cqw;background:linear-gradient(180deg,#2d3033,#141617);border-radius:.5cqw;padding:.8cqw;
+  box-shadow:0 1px 0 rgba(255,255,255,.65),inset 0 .2cqw .4cqw rgba(0,0,0,.8)}
+.lcd{background:linear-gradient(180deg,#a3a79e 0%,#c3c6bb 30%,#bcc0b3 100%);border-radius:.25cqw;padding:1.3cqw 1.6cqw .7cqw;box-shadow:inset 0 .4cqw .8cqw rgba(0,0,0,.35)}
+.digits{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:.2cqw}
+.digits svg{display:block;width:100%;height:auto;overflow:visible}
+.seg{fill:rgba(30,33,30,.06)} .seg.on{fill:var(--c-seg)}
+.dpd{fill:rgba(30,33,30,.06)} .dpd.on{fill:var(--c-seg)}
+.cm{stroke:transparent;stroke-width:2.4;fill:none;stroke-linecap:round} .cm.on{stroke:var(--c-seg)}
+.ann{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));font:600 1.3cqw/1 var(--font-key);color:var(--c-seg);margin-top:.6cqw;height:1.4cqw;letter-spacing:.06em;white-space:nowrap}
+.ann span{visibility:hidden} .ann span.on{visibility:visible}
+.lcd.blink .digits{animation:blink 1s steps(2,jump-none) infinite}
+@keyframes blink{50%{opacity:.15}}
+.badge{margin-left:auto;flex:0 0 auto;width:7.6cqw;aspect-ratio:1;max-width:100%;background:linear-gradient(160deg,#1c1d1e,#060606);border-radius:.4cqw;
+  box-shadow:inset 0 0 0 .15cqw #3a3c3e,0 1px 0 rgba(255,255,255,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.2cqw;color:#c9ccce}
+.badge b{font:700 3.3cqw/.9 var(--font-key);letter-spacing:.02em}
+.badge span{font:600 1.1cqw/1 var(--font-key);letter-spacing:.3em;margin-right:-.3em;color:#8e9295}
+
+/* keyboard plate with thin metal frame */
+.plate{margin-top:1.1cqw;padding:.45cqw;border-radius:.6cqw;
+  background:linear-gradient(180deg,#c9ccce,#8f9396);box-shadow:inset 0 1px 0 rgba(255,255,255,.6)}
+.keys{position:relative;background:linear-gradient(180deg,#121314,#0b0b0c);border-radius:.35cqw;padding:1.5cqw 2cqw 1cqw;display:grid;
+  grid-template-columns:repeat(10,minmax(0,1fr));column-gap:var(--gap);row-gap:var(--rgap)}
+.cell{display:flex;flex-direction:column;min-width:0}
+.flab{height:var(--fl);font:500 var(--fs-f)/var(--fl) var(--font-key);color:var(--c-f);text-align:center;white-space:nowrap;letter-spacing:.03em;overflow:visible}
+.key{appearance:none;border:0;padding:0;margin:0;cursor:pointer;display:flex;flex-direction:column;height:var(--kh);border-radius:.55cqw;
+  background:linear-gradient(180deg,#121212,#050505);
+  box-shadow:0 0 0 .18cqw #000,0 .35cqw .5cqw rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.08);
+  overflow:hidden;color:var(--c-ink);font-family:var(--font-key);transition:transform 50ms,box-shadow 50ms;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.key .face{flex:1.55;display:grid;place-items:center;margin:.25cqw .35cqw 0;background:linear-gradient(180deg,#2f3032 0%,#202123 60%,#1a1b1c 100%);
+  border-radius:.4cqw .4cqw .25cqw .25cqw;box-shadow:inset 0 1px 0 rgba(255,255,255,.14);font-weight:600;font-size:var(--fs-main);line-height:1;white-space:nowrap}
+.key .front{flex:1;display:grid;place-items:center;color:var(--c-g);font-weight:600;font-size:var(--fs-g);line-height:1;white-space:nowrap;letter-spacing:.02em}
+.key.kf .face{background:linear-gradient(180deg,#e2b54e,#c3912a);color:#2a1d06;font-weight:500;font-family:var(--font-body)}
+.key.kg .face{background:linear-gradient(180deg,#2bb0c8,#13889f);color:#03222a;font-weight:500;font-family:var(--font-body)}
+.key:active,.key.down{transform:translateY(.25cqw);box-shadow:0 0 0 .18cqw #000,0 .1cqw .2cqw rgba(0,0,0,.8)}
+.key:focus-visible{outline:2px solid var(--c-f);outline-offset:2px}
+.cell.enter .key{height:auto;flex:1}
+.cell.enter .face span{writing-mode:vertical-rl;text-orientation:upright;letter-spacing:-.06em}
+.clear{grid-row:3;grid-column:2 / 6;align-self:start;margin:-1cqw 1.6cqw 0;height:.9cqw;border:1px solid var(--c-f);border-bottom:0;pointer-events:none;display:flex;justify-content:center;z-index:1}
+.clear span{font:500 var(--fs-f)/1 var(--font-key);color:var(--c-f);background:#111213;padding:0 .8cqw;transform:translateY(-55%);letter-spacing:.14em}
+.brand{grid-row:5;grid-column:1 / -1;display:flex;align-items:center;gap:1.2cqw;font:600 1.5cqw/1 var(--font-key);letter-spacing:.42em;color:#c3c6c8;margin-top:.2cqw}
+.brand::before{content:"";width:3.2cqw;height:.35cqw;background:#c3c6c8}
+
+/* back of the calculator: quick-reference card */
+.face-back .shell{height:100%;display:flex}
+.backplate{flex:1;position:relative;border-radius:1.2cqw;padding:2.4cqw 3cqw;overflow:auto;color:#cfd2d4;
+  background:radial-gradient(120% 90% at 30% 20%,#232425,#151617);box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  display:grid;grid-template-columns:1fr 1fr 1.3fr .95fr;gap:2.4cqw;font:400 clamp(9px,1.32cqw,13px)/1.45 var(--font-body)}
+.backplate h4{margin:0 0 .6cqw;font:700 clamp(10px,1.5cqw,15px)/1.1 var(--font-key);letter-spacing:.14em;color:#e9ebec;border-bottom:1px solid #4b4e51;padding-bottom:.4cqw}
+.backplate table{border-collapse:collapse;width:100%}
+.backplate td{padding:.12cqw .4cqw .12cqw 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.06)}
+.backplate td:first-child{font-family:var(--font-mono);color:var(--c-f);width:2.2em}
+.backplate .blk{display:flex;flex-direction:column;gap:1.6cqw;min-width:0}
+.backplate .mono{font-family:var(--font-mono)}
+.backplate svg{width:100%;height:auto;display:block}
+.foot{position:absolute;width:9cqw;height:1.4cqw;border-radius:1cqw;background:#0a0a0a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.mats{display:flex;flex-direction:column;gap:10px}
+.mat .mh{font:13px var(--font-mono);color:var(--muted)}
+.mat .mh b{color:var(--fg);font-weight:600}
+.mat.res .mh{color:var(--accent)}
+.mg{overflow-x:auto;margin-top:4px}
+.mg table{border-collapse:collapse;font:12px var(--font-mono);font-variant-numeric:tabular-nums}
+.mg td{border:1px solid var(--line);padding:2px 7px;text-align:right;white-space:nowrap}
+.calc-tools{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:-4px}
+@media (prefers-reduced-motion:reduce){ .flip{transition:none} }
+.status{min-height:1.5em;margin:-4px auto 0;max-width:920px;width:100%;font:13px/1.5 var(--font-mono);color:var(--muted);text-align:center}
+.status b{color:var(--accent);font-weight:500}
+
+/* ---------- panels ---------- */
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,310px),1fr));gap:16px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px 18px;min-width:0}
+.panel h2{margin:0 0 10px;font:700 17px/1.2 var(--font-key);letter-spacing:.08em;text-transform:uppercase}
+.panel h3{margin:16px 0 8px;font:600 13px/1.2 var(--font-key);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.panel p{margin:0 0 10px}
+.muted{color:var(--muted);font-size:13.5px}
+
+.ex{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.ex li{padding:11px 0;border-top:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:start}
+.ex li:first-child{border-top:0;padding-top:2px}
+.ex .t{font-weight:600;font-size:14.5px}
+.ex .d{grid-column:1 / -1;color:var(--muted);font-size:13.5px}
+.chips{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:4px}
+.chip{font:600 14px/1 var(--font-key);padding:4px 7px 3px;border-radius:4px;border:1px solid var(--line);background:var(--bg);letter-spacing:.02em}
+.chip.cf{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.chip.cg{color:var(--gacc);border-color:color-mix(in srgb,var(--gacc) 45%,var(--line))}
+.ex .res{grid-column:1 / -1;font:12.5px var(--font-mono);color:var(--muted)}
+.ex .res b{color:var(--fg);font-weight:500}
+.btn{appearance:none;font:600 13px/1 var(--font-body);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:6px;padding:7px 11px;cursor:pointer}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.warn{color:#b3412e;border-color:currentColor}
+
+.stack{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:0;font-variant-numeric:tabular-nums}
+.stack dt{font:600 14px/1.6 var(--font-key);letter-spacing:.06em;color:var(--muted)}
+.stack dd{margin:0;text-align:right;font:14px/1.6 var(--font-mono);overflow-wrap:anywhere}
+.stack .x{color:var(--fg)} .stack dd.x{font-weight:500;background:var(--hi);border-radius:4px;padding:0 6px}
+.regs{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:2px 14px;font:12.5px/1.7 var(--font-mono);font-variant-numeric:tabular-nums}
+.regs div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dotted var(--line);min-width:0}
+.regs span:first-child{color:var(--muted)}
+.regs span:last-child{overflow:hidden;text-overflow:ellipsis}
+.regs i{font-style:normal;color:var(--muted);opacity:.75;font-size:11px}
+
+.prog{list-style:none;margin:0;padding:0;max-height:340px;overflow:auto;position:relative;border:1px solid var(--line);border-radius:6px;background:var(--bg);font:12.5px/1.9 var(--font-mono)}
+.prog li{display:grid;grid-template-columns:3.2em 7.2em 1fr;gap:8px;padding:0 10px;cursor:pointer;white-space:nowrap}
+.prog li:hover{background:color-mix(in srgb,var(--hi) 60%,transparent)}
+.prog li.cur{background:var(--hi)}
+.prog .ln{color:var(--muted)} .prog .kc{color:var(--muted)}
+.prog .mn{overflow:hidden;text-overflow:ellipsis}
+.prog li.lbl .mn{color:var(--accent);font-weight:500}
+
+table.kb{border-collapse:collapse;width:100%;font-size:13.5px}
+table.kb td{padding:4px 0;border-bottom:1px dotted var(--line);vertical-align:top}
+table.kb td:first-child{width:42%;font-family:var(--font-mono);font-size:12.5px}
+kbd{font:12px var(--font-mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--bg)}
+.notes{margin:0;padding-left:18px;font-size:13.5px;color:var(--muted)}
+.notes li{margin:3px 0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px}
+
+@media (prefers-reduced-motion:reduce){ .lcd.blink .digits{animation:none;opacity:.6} .key{transition:none} }
+</style>
+
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="top">
+    <h1>RPN-<b>15</b></h1>
+    <p>Follows the HP‑15C keystroke for keystroke: RPN stack, complex numbers, matrices, indirect addressing, keystroke programming, SOLVE and ∫xy. Click the keys or type on your keyboard. Memory survives a reload.</p>
+  </header>
+
+  <section class="calc" aria-label="Calculator">
+    <div class="flip" id="flip">
+      <div class="face-front">
+        <div class="shell">
+          <div class="deck">
+            <div class="bezel"><div class="lcd" id="lcd" role="status" aria-live="polite">
+              <div class="digits" id="digits"></div>
+              <div class="ann"><span id="aUSER" style="grid-column:2">USER</span><span id="aF" style="grid-column:3">f</span><span id="aG" style="grid-column:4">g</span><span id="aANG" style="grid-column:6 / 8">RAD</span><span id="aC" style="grid-column:8">C</span><span id="aPRGM" style="grid-column:9 / 12">PRGM</span></div>
+            </div></div>
+            <div class="badge" aria-hidden="true"><span>RPN</span><b>15</b></div>
+          </div>
+          <div class="plate">
+            <div class="keys" id="keys"><div class="clear"><span>CLEAR</span></div><div class="brand">RPN-15 SCIENTIFIC PROGRAMMABLE</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="face-back" aria-hidden="true" id="backface">
+        <div class="shell">
+          <div class="backplate">
+            <span class="foot" style="left:3cqw;top:1cqw"></span><span class="foot" style="right:3cqw;top:1cqw"></span>
+            <span class="foot" style="left:3cqw;bottom:1cqw"></span><span class="foot" style="right:3cqw;bottom:1cqw"></span>
+            <div class="blk">
+              <div><h4>Σ REGISTERS</h4>
+                <table><tbody>
+                  <tr><td>R2</td><td>n</td></tr><tr><td>R3</td><td>Σx</td></tr><tr><td>R4</td><td>Σx²</td></tr>
+                  <tr><td>R5</td><td>Σy</td></tr><tr><td>R6</td><td>Σy²</td></tr><tr><td>R7</td><td>Σxy</td></tr>
+                </tbody></table></div>
+              <div><h4>CONVERSIONS</h4>
+                <div class="mono">cm ÷ 2.54 = in<br>kg × 2.204622622 = lb<br>L ÷ 3.785411784 = gal<br>°C × 1.8 + 32 = °F</div></div>
+            </div>
+            <div class="blk">
+              <div><h4>DSE · ISG</h4><div class="mono">± nnnnn.xxxyy</div><div>n counter · xxx limit · yy step (00 = 1)</div></div>
+              <div><h4>→H.MS</h4><div class="mono">H.MMSSs</div><div>hours . minutes seconds</div></div>
+              <div><h4>→P · →R</h4>
+                <svg viewBox="0 0 120 70" role="img" aria-label="Polar and rectangular coordinates">
+                  <line x1="10" y1="60" x2="112" y2="60" stroke="#8e9295" stroke-width="1"/><line x1="10" y1="60" x2="10" y2="6" stroke="#8e9295" stroke-width="1"/>
+                  <line x1="10" y1="60" x2="90" y2="16" stroke="#e3a53c" stroke-width="1.6"/>
+                  <line x1="90" y1="16" x2="90" y2="60" stroke="#74b6ea" stroke-width="1" stroke-dasharray="3 2"/>
+                  <path d="M30 60 A20 20 0 0 0 27.5 50.5" fill="none" stroke="#cfd2d4" stroke-width="1"/>
+                  <text x="36" y="56" fill="#cfd2d4" font-size="8">θ (y)</text><text x="44" y="31" fill="#e3a53c" font-size="8">r (x)</text>
+                  <text x="94" y="40" fill="#74b6ea" font-size="8">y</text><text x="50" y="69" fill="#74b6ea" font-size="8">x</text>
+                </svg></div>
+            </div>
+            <div class="blk">
+              <div><h4>ERROR</h4>
+                <table><tbody>
+                  <tr><td>0</td><td>Improper math: y÷0, LN 0, √−x …</td></tr>
+                  <tr><td>1</td><td>Improper matrix operation</td></tr>
+                  <tr><td>2</td><td>Improper Σ operation</td></tr>
+                  <tr><td>3</td><td>Improper register number</td></tr>
+                  <tr><td>4</td><td>Label or line not found</td></tr>
+                  <tr><td>5</td><td>More than 7 subroutine levels</td></tr>
+                  <tr><td>6</td><td>Improper flag number</td></tr>
+                  <tr><td>7</td><td>SOLVE or ∫ function runs away</td></tr>
+                  <tr><td>8</td><td>SOLVE: no root found</td></tr>
+                  <tr><td>9</td><td>Service</td></tr>
+                  <tr><td>10</td><td>Program memory full</td></tr>
+                  <tr><td>11</td><td>Improper matrix argument</td></tr>
+                </tbody></table></div>
+            </div>
+            <div class="blk">
+              <div><h4>TEST</h4>
+                <table><tbody>
+                  <tr><td>0</td><td>x≠0</td></tr><tr><td>1</td><td>x&gt;0</td></tr><tr><td>2</td><td>x&lt;0</td></tr><tr><td>3</td><td>x≥0</td></tr>
+                  <tr><td>4</td><td>x≤0</td></tr><tr><td>5</td><td>x=y</td></tr><tr><td>6</td><td>x≠y</td></tr><tr><td>7</td><td>x&gt;y</td></tr>
+                  <tr><td>8</td><td>x&lt;y</td></tr><tr><td>9</td><td>x≥y</td></tr>
+                </tbody></table></div>
+              <div><h4>MATRIX</h4>
+                <table><tbody>
+                  <tr><td>0</td><td>DIM all 0×0</td></tr><tr><td>1</td><td>R0 = R1 = 1</td></tr><tr><td>2</td><td>Zᴾ → Z̃</td></tr><tr><td>3</td><td>Z̃ → Zᴾ</td></tr>
+                  <tr><td>4</td><td>Transpose</td></tr><tr><td>5</td><td>YᵀX</td></tr><tr><td>6</td><td>Residual</td></tr><tr><td>7</td><td>Row norm</td></tr>
+                  <tr><td>8</td><td>Frobenius norm</td></tr><tr><td>9</td><td>Determinant</td></tr>
+                </tbody></table></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div class="calc-tools"><button class="btn" type="button" id="turn">Turn over for the reference card</button></div>
+  <p class="status" id="status"></p>
+
+  <section class="panels">
+    <div class="panel">
+      <h2>Try it</h2>
+      <ul class="ex" id="examples"></ul>
+    </div>
+    <div class="panel">
+      <h2>Stack</h2>
+      <dl class="stack" id="stack"></dl>
+      <p class="muted" id="cxnote" style="margin:8px 0 0"></p>
+      <h3>Storage registers</h3>
+      <div class="regs" id="regs"></div>
+      <h3>Memory</h3>
+      <p class="muted" id="memline"></p>
+    </div>
+    <div class="panel">
+      <h2>Matrices</h2>
+      <div class="mats" id="mats"></div>
+      <p class="muted" style="margin-top:10px">Dimension with rows ENTER columns <b>f DIM A</b>. Then <b>f MATRIX 1</b>, <b>f USER</b>, and <b>STO A</b> once per element, row by row.</p>
+    </div>
+    <div class="panel">
+      <h2>Program memory</h2>
+      <p class="muted" id="proghint"></p>
+      <ol class="prog" id="prog"></ol>
+      <h3>Write your own</h3>
+      <p class="muted">Press <b>g P/R</b>, then <b>f LBL D</b>, the steps, and <b>g RTN</b>. Press <b>g P/R</b> again to leave. Run it with <b>f D</b>. <b>←</b> deletes the current line; <b>SST</b>/<b>BST</b> move through memory. Click a line to jump there.</p>
+    </div>
+    <div class="panel">
+      <h2>Keyboard</h2>
+      <table class="kb"><tbody>
+        <tr><td><kbd>0</kbd>–<kbd>9</kbd> <kbd>.</kbd></td><td>Digits and decimal point</td></tr>
+        <tr><td><kbd>Enter</kbd> <kbd>Backspace</kbd></td><td>ENTER and ←</td></tr>
+        <tr><td><kbd>+</kbd> <kbd>-</kbd> <kbd>*</kbd> <kbd>/</kbd></td><td>Arithmetic</td></tr>
+        <tr><td><kbd>f</kbd> <kbd>g</kbd></td><td>Gold and blue shift keys</td></tr>
+        <tr><td><kbd>s</kbd> <kbd>r</kbd></td><td>STO and RCL</td></tr>
+        <tr><td><kbd>x</kbd> <kbd>d</kbd> <kbd>n</kbd> <kbd>e</kbd></td><td>x⇄y, R↓, CHS, EEX</td></tr>
+        <tr><td><kbd>q</kbd> <kbd>^</kbd> <kbd>i</kbd></td><td>√x, yˣ, 1/x</td></tr>
+        <tr><td><kbd>A</kbd>–<kbd>E</kbd> (Shift)</td><td>Top-row keys, for labels A–E</td></tr>
+        <tr><td><kbd>Space</kbd> <kbd>t</kbd></td><td>R/S and SST</td></tr>
+        <tr><td><kbd>o</kbd></td><td>ON</td></tr>
+      </tbody></table>
+      <h3>About the emulation</h3>
+      <ul class="notes">
+        <li>Results are rounded to 10 significant digits, as on the real machine.</li>
+        <li>Memory is shared the HP‑15C way: 64 registers split between data registers, program lines, matrix elements and the imaginary stack. <b>g MEM</b> shows the split.</li>
+        <li>With the calculator off, press <b>−</b> then <b>ON</b> to reset Continuous Memory, or <b>.</b> then <b>ON</b> to swap the decimal point and comma. <kbd>o</kbd> is ON on your keyboard.</li>
+        <li>Conditional tests run from the keyboard show true or false. The RAN# sequence differs from a real 15C, and the self-tests are not emulated.</li>
+      </ul>
+      <div class="row"><button class="btn" id="reset" type="button">Reset memory</button><span class="muted" id="resetNote"></span></div>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+"use strict";
+const PI10=3.141592654, SENT=-1, LS='rpn15.state.v1', LET='ABCDE';
+class CalcErr{constructor(n){this.n=n}}
+const err=n=>new CalcErr(n);
+const $=id=>document.getElementById(id);
+const isD=v=>typeof v==='string';           // matrix descriptors are stored as 'A'..'E'
+const num=v=>{ if(isD(v)) throw err(1); return v; };
+
+/* ---------- keyboard definition: code, main, f (gold), g (blue) ---------- */
+const KEYS=[
+ {c:11,m:'√x',o:'sqrt',f:'A',fo:'gsb:A',g:'x²',go:'sq'},
+ {c:12,m:'eˣ',o:'exp',f:'B',fo:'gsb:B',g:'LN',go:'ln'},
+ {c:13,m:'10ˣ',o:'p10',f:'C',fo:'gsb:C',g:'LOG',go:'log'},
+ {c:14,m:'yˣ',o:'pow',f:'D',fo:'gsb:D',g:'%',go:'pct'},
+ {c:15,m:'1/x',o:'inv',f:'E',fo:'gsb:E',g:'Δ%',go:'dpct'},
+ {c:16,m:'CHS',o:'chs',f:'MATRIX',fo:'@matrix',g:'ABS',go:'abs'},
+ {c:7,m:'7',o:'d7',f:'FIX',fo:'@fix',g:'DEG',go:'deg'},
+ {c:8,m:'8',o:'d8',f:'SCI',fo:'@sci',g:'RAD',go:'rad'},
+ {c:9,m:'9',o:'d9',f:'ENG',fo:'@eng',g:'GRD',go:'grd'},
+ {c:10,m:'÷',o:'div',f:'SOLVE',fo:'@solve',g:'x≤y',go:'xley'},
+ {c:21,m:'SST',o:'sst',f:'LBL',fo:'@lbl',g:'BST',go:'bst'},
+ {c:22,m:'GTO',o:'@gto',f:'HYP',fo:'@hyp',g:'HYP⁻¹',go:'@ahyp'},
+ {c:23,m:'SIN',o:'sin',f:'DIM',fo:'@dim',g:'SIN⁻¹',go:'asin'},
+ {c:24,m:'COS',o:'cos',f:'(i)',fo:'showIm',g:'COS⁻¹',go:'acos'},
+ {c:25,m:'TAN',o:'tan',f:'I',fo:'cplxI',g:'TAN⁻¹',go:'atan'},
+ {c:26,m:'EEX',o:'eex',f:'RESULT',fo:'@result',g:'π',go:'pi'},
+ {c:4,m:'4',o:'d4',f:'x⇄',fo:'@xch',g:'SF',go:'@sf'},
+ {c:5,m:'5',o:'d5',f:'DSE',fo:'@dse',g:'CF',go:'@cf'},
+ {c:6,m:'6',o:'d6',f:'ISG',fo:'@isg',g:'F?',go:'@fq'},
+ {c:20,m:'×',o:'mul',f:'∫xy',fo:'@integ',g:'x=0',go:'xeq0'},
+ {c:31,m:'R/S',o:'rs',f:'PSE',fo:'pse',g:'P/R',go:'prgm'},
+ {c:32,m:'GSB',o:'@gsb',f:'Σ',fo:'clrSigma',g:'RTN',go:'rtn'},
+ {c:33,m:'R↓',o:'rdn',f:'PRGM',fo:'clrPrgm',g:'R↑',go:'rup'},
+ {c:34,m:'x⇄y',o:'swap',f:'REG',fo:'clrReg',g:'RND',go:'rnd'},
+ {c:35,m:'←',o:'back',f:'PREFIX',fo:'prefix',g:'CLx',go:'clx'},
+ {c:36,m:'ENTER',o:'enter',f:'RAN #',fo:'ran',g:'LSTx',go:'lastx'},
+ {c:1,m:'1',o:'d1',f:'→R',fo:'toR',g:'→P',go:'toP'},
+ {c:2,m:'2',o:'d2',f:'→H.MS',fo:'toHMS',g:'→H',go:'toH'},
+ {c:3,m:'3',o:'d3',f:'→RAD',fo:'toRAD',g:'→DEG',go:'toDEG'},
+ {c:30,m:'−',o:'sub',f:'Re⇄Im',fo:'reim',g:'TEST',go:'@test'},
+ {c:41,m:'ON',o:'on'},
+ {c:42,m:'f',o:'f'},
+ {c:43,m:'g',o:'g'},
+ {c:44,m:'STO',o:'@sto',f:'FRAC',fo:'frac',g:'INT',go:'int'},
+ {c:45,m:'RCL',o:'@rcl',f:'USER',fo:'user',g:'MEM',go:'mem'},
+ {c:0,m:'0',o:'d0',f:'x!',fo:'fact',g:'x̄',go:'mean'},
+ {c:48,m:'·',o:'dot',f:'ŷ,r',fo:'yhat',g:'s',go:'sdev'},
+ {c:49,m:'Σ+',o:'splus',f:'L.R.',fo:'lr',g:'Σ−',go:'sminus'},
+ {c:40,m:'+',o:'add',f:'Py,x',fo:'perm',g:'Cy,x',go:'comb'},
+];
+const KEYMAP={}; KEYS.forEach(k=>KEYMAP[k.c]=k);
+
+/* instruction tables: key codes + mnemonic */
+const OPS={};
+KEYS.forEach(K=>{
+  const add=(op,codes,m)=>{ if(!op||op[0]==='@'||op.includes(':')||OPS[op]) return; OPS[op]={codes,m}; };
+  add(K.o,[String(K.c)],K.m); add(K.fo,['42',String(K.c)],K.f); add(K.go,['43',String(K.c)],K.g);
+});
+OPS.dot.m='.'; OPS.clrSigma.m='CLEAR Σ'; OPS.clrReg.m='CLEAR REG'; OPS.cplxI.m='I (complex)';
+Object.assign(OPS,{stoRes:{codes:['44','26'],m:'STO RESULT'},rclRes:{codes:['45','26'],m:'RCL RESULT'},stoRan:{codes:['44','36'],m:'STO RAN#'},rclRan:{codes:['45','36'],m:'RCL RAN#'}});
+[['sin',23],['cos',24],['tan',25]].forEach(([n,c])=>{
+  OPS[n+'h']={codes:['42','22',String(c)],m:'HYP '+n.toUpperCase()};
+  OPS['a'+n+'h']={codes:['43','22',String(c)],m:'HYP⁻¹ '+n.toUpperCase()};
+});
+const ARGOPS={sto:{codes:['44'],m:'STO'},rcl:{codes:['45'],m:'RCL'},fix:{codes:['42','7'],m:'FIX'},sci:{codes:['42','8'],m:'SCI'},eng:{codes:['42','9'],m:'ENG'},
+  lbl:{codes:['42','21'],m:'LBL'},gto:{codes:['22'],m:'GTO'},gsb:{codes:['32'],m:'GSB'},sf:{codes:['43','4'],m:'SF'},cf:{codes:['43','5'],m:'CF'},fq:{codes:['43','6'],m:'F?'},
+  test:{codes:['43','30'],m:'TEST'},dse:{codes:['42','5'],m:'DSE'},isg:{codes:['42','6'],m:'ISG'},xch:{codes:['42','4'],m:'x⇄'},solve:{codes:['42','10'],m:'SOLVE'},integ:{codes:['42','20'],m:'∫xy'},
+  dim:{codes:['42','23'],m:'DIM'},matrix:{codes:['42','16'],m:'MATRIX'},result:{codes:['42','26'],m:'RESULT'},
+  stoM:{codes:['44','16'],m:'STO MATRIX'},rclM:{codes:['45','16'],m:'RCL MATRIX'},rclDim:{codes:['45','23'],m:'RCL DIM'},stoG:{codes:['44','43'],m:'STO g'},rclG:{codes:['45','43'],m:'RCL g'}};
+const TESTNAMES=['x≠0','x>0','x<0','x≥0','x≤0','x=y','x≠y','x>y','x<y','x≥y'];
+const ARSYM={40:'+',30:'−',20:'×',10:'÷'};
+const MATNAMES=['DIM all 0×0','R0 = R1 = 1','Zᴾ → Z̃','Z̃ → Zᴾ','transpose','YᵀX','residual','row norm','Frobenius norm','determinant'];
+
+function argCode(a){ const i=LET.indexOf(a); if(a.length===1&&i>=0) return String(11+i); if(a==='I') return '25'; if(a==='(i)') return '24'; return a; }
+function codesOf(ins){ const A=ARGOPS[ins.k]; if(A){ const p=A.codes.slice(); if(ins.ar) p.push(String(ins.ar)); p.push(argCode(ins.a)); return p; } const o=OPS[ins.k]; return o?o.codes:['??']; }
+function codeStr(parts){
+  if(parts.length===1) return parts[0];
+  const rest=parts.slice(1).map(p=>p.length<2?' '+p:p);
+  return parts.length===2 ? parts[0]+' '+rest[0] : [parts[0],...rest].join(',');
+}
+function mnemOf(ins){
+  const A=ARGOPS[ins.k];
+  if(A){ let s=A.m; if(ins.ar) s+=' '+ARSYM[ins.ar]; s+=' '+ins.a; if(ins.k==='test') s+='  ('+TESTNAMES[+ins.a]+')'; if(ins.k==='matrix') s+='  ('+MATNAMES[+ins.a]+')'; if(ins.u) s+='  (user)'; return s; }
+  const o=OPS[ins.k]; return o?o.m:ins.k;
+}
+const validIns=i=>i&&typeof i.k==='string'&&(ARGOPS[i.k]?typeof i.a==='string':!!OPS[i.k]);
+function bytesOf(i){
+  const k=i.k, a=i.a||'', reg29=/^[2-9]$/.test(a)||a[0]==='.';
+  if(k==='lbl'||k==='gto') return a[0]==='.'?2:1;
+  if(['sf','cf','fq','fix','sci','eng','solve','integ','matrix','stoM'].includes(k)) return 2;
+  if(['xch','dse','isg'].includes(k)&&reg29) return 2;
+  if((k==='sto'||k==='rcl')&&(i.ar||i.u)) return 2;
+  if((k==='stoG'||k==='rclG')&&a==='(i)') return 2;
+  return 1;
+}
+
+/* ---------- state ---------- */
+const SAMPLE=[{k:'lbl',a:'A'},{k:'sq'},{k:'d2'},{k:'sub'},{k:'rtn'},
+  {k:'lbl',a:'B'},{k:'sq'},{k:'chs'},{k:'exp'},{k:'rtn'},
+  {k:'lbl',a:'C'},{k:'sq'},{k:'pi'},{k:'mul'},{k:'rtn'}];
+const emptyMats=()=>{ const m={}; for(const L of LET) m[L]={r:0,c:0,d:[],lu:false,piv:null,sign:1}; return m; };
+function fresh(samples=true){ return {on:true,x:0,y:0,z:0,t:0,lastx:0,lift:true,keepIm:false,im:{x:0,y:0,z:0,t:0,lastx:0},
+  regs:Array(66).fill(0),ri:0,dd:19,flags:Array(10).fill(false),fmt:'FIX',dig:4,ang:'DEG',prgm:false,user:false,
+  prog:samples?SAMPLE.map(o=>({...o})):[],pc:0,ret:[],mats:emptyMats(),res:'A',seed:0,sep:false}; }
+function load(){
+  try{ const j=localStorage.getItem(LS); if(j){
+    const o=Object.assign(fresh(),JSON.parse(j)); o.ret=[];
+    if(!Array.isArray(o.regs)) o.regs=[];
+    if(o.regs.length===21){ o.ri=o.regs[20]; o.regs=o.regs.slice(0,20); }
+    while(o.regs.length<66) o.regs.push(0); o.regs.length=66;
+    if(!o.mats||!o.mats.A) o.mats=emptyMats();
+    if(!o.im) o.im={x:0,y:0,z:0,t:0,lastx:0};
+    o.prog=(o.prog||[]).filter(validIns); if(o.pc>o.prog.length) o.pc=0;
+    return o; } }catch(e){}
+  return fresh();
+}
+function save(){ try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){} }
+
+let S=load();
+let E=null, shift=null, pending=null, errorCode=null, running=false, pauseShow=false, runTimer=null, msg=null, msgTimer=null, busy=false, statusMsg='', progVer=0;
+let offArm=null, lastElem=null, inSolve=false, inInteg=false;
+const CX=()=>S.flags[8];
+
+/* ---------- memory ---------- */
+const progBytes=()=>S.prog.reduce((s,i)=>s+bytesOf(i),0);
+const progRegs=()=>Math.ceil(progBytes()/7);
+const matElems=()=>{ let n=0; for(const L of LET) n+=S.mats[L].r*S.mats[L].c; return n; };
+const freeRegs=()=>65-S.dd-progRegs()-matElems()-(CX()?5:0);
+
+/* ---------- math helpers ---------- */
+function round10(v){ if(v===0) return 0; if(!isFinite(v)) return v; return parseFloat(v.toPrecision(10)); }
+function chk(v){
+  if(Number.isNaN(v)) throw err(0);
+  if(!isFinite(v)||Math.abs(v)>9.999999999e99){ S.flags[9]=true; return (v<0?-1:1)*9.999999999e99; }
+  if(Math.abs(v)<1e-99) return 0;
+  return round10(v);
+}
+function toRad(x){ return S.ang==='RAD'?x:S.ang==='DEG'?x*Math.PI/180:x*Math.PI/200; }
+function fromRad(r){ return S.ang==='RAD'?r:S.ang==='DEG'?r*180/Math.PI:r*200/Math.PI; }
+function quad(x){ if(S.ang==='RAD') return -1; const full=S.ang==='DEG'?360:400, q=full/4; const r=((x%full)+full)%full; return r%q===0?r/q:-1; }
+function sinA(x){ const q=quad(x); return q>=0?[0,1,0,-1][q]:Math.sin(toRad(x)); }
+function cosA(x){ const q=quad(x); return q>=0?[1,0,-1,0][q]:Math.cos(toRad(x)); }
+function tanA(x){ const q=quad(x); if(q>=0) return q%2===0?0:(q===1?Infinity:-Infinity); return Math.tan(toRad(x)); }
+function gamma(z){
+  if(z<0.5) return Math.PI/(Math.sin(Math.PI*z)*gamma(1-z));
+  z-=1; const c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+  let x=c[0]; for(let i=1;i<9;i++) x+=c[i]/(z+i); const t=z+7.5;
+  return Math.sqrt(2*Math.PI)*Math.pow(t,z+0.5)*Math.exp(-t)*x;
+}
+function factorial(x){ if(x<0&&Number.isInteger(x)) throw err(0); if(x>=70) return Infinity; if(Number.isInteger(x)){ let r=1; for(let i=2;i<=x;i++) r*=i; return r; } return gamma(x+1); }
+function intArgs(y,x){ if(!Number.isInteger(x)||!Number.isInteger(y)||x<0||y<0||x>y||y>=1e10) throw err(0); }
+function perm(y,x){ intArgs(y,x); let r=1; for(let i=0;i<x&&isFinite(r);i++) r*=y-i; return r; }
+function comb(y,x){ intArgs(y,x); const k=Math.min(x,y-x); let r=1; for(let i=1;i<=k&&isFinite(r);i++) r=r*(y-k+i)/i; return isFinite(r)?Math.round(r):r; }
+function toHMS(h){ const s=h<0?-1:1; h=Math.abs(h); let H=Math.floor(h), rem=(h-H)*60, M=Math.floor(rem+1e-9), sec=Math.max(0,(rem-M)*60); sec=Math.round(sec*1e6)/1e6; if(sec>=60){sec-=60;M++;} if(M>=60){M-=60;H++;} return s*(H+M/100+sec/10000); }
+function toH(v){ const s=v<0?-1:1; v=Math.abs(v); const H=Math.floor(v), r=(v-H)*100, M=Math.floor(r+1e-7), sec=(r-M)*100; return s*(H+M/60+sec/3600); }
+function rndDisp(x){ const ax=Math.abs(x); if(S.fmt==='FIX'){ const f=fixParts(ax,S.dig); if(f) return Math.sign(x)*parseFloat(f.ip+'.'+(f.fp||'0')); } return parseFloat(x.toPrecision(Math.min(S.dig,9)+1)); }
+function nextRan(){
+  let s=BigInt(Math.round(S.seed*1e10)); s=(s*2851130928461n+1234567891n)%10000000000n;
+  S.seed=Number(s)/1e10; return S.seed;
+}
+
+const UN={
+  sqrt:x=>{ if(x<0) throw err(0); return Math.sqrt(x); }, sq:x=>x*x, exp:Math.exp,
+  ln:x=>{ if(x<=0) throw err(0); return Math.log(x); }, p10:x=>Math.pow(10,x),
+  log:x=>{ if(x<=0) throw err(0); return Math.log10(x); }, inv:x=>{ if(x===0) throw err(0); return 1/x; },
+  abs:Math.abs, int:Math.trunc, frac:x=>x-Math.trunc(x), rnd:rndDisp, fact:factorial,
+  sin:sinA, cos:cosA, tan:tanA,
+  asin:x=>{ if(Math.abs(x)>1) throw err(0); return fromRad(Math.asin(x)); },
+  acos:x=>{ if(Math.abs(x)>1) throw err(0); return fromRad(Math.acos(x)); },
+  atan:x=>fromRad(Math.atan(x)),
+  sinh:Math.sinh, cosh:Math.cosh, tanh:Math.tanh, asinh:Math.asinh,
+  acosh:x=>{ if(x<1) throw err(0); return Math.acosh(x); },
+  atanh:x=>{ if(Math.abs(x)>=1) throw err(0); return Math.atanh(x); },
+  toRAD:x=>x*Math.PI/180, toDEG:x=>x*180/Math.PI, toHMS, toH
+};
+const BIN={ add:(y,x)=>y+x, sub:(y,x)=>y-x, mul:(y,x)=>y*x,
+  div:(y,x)=>{ if(x===0) throw err(0); return y/x; },
+  pow:(y,x)=>{ if(y===0&&x<=0) throw err(0); return Math.pow(y,x); }, perm, comb };
+
+/* ---------- complex arithmetic (Complex mode) ---------- */
+const Cx=(re,im=0)=>({re,im});
+const cadd=(a,b)=>Cx(a.re+b.re,a.im+b.im), csub=(a,b)=>Cx(a.re-b.re,a.im-b.im);
+const cmul=(a,b)=>Cx(a.re*b.re-a.im*b.im,a.re*b.im+a.im*b.re);
+function cdiv(a,b){ const d=b.re*b.re+b.im*b.im; if(d===0) throw err(0); return Cx((a.re*b.re+a.im*b.im)/d,(a.im*b.re-a.re*b.im)/d); }
+const cabs=z=>Math.hypot(z.re,z.im);
+const cexp=z=>{ const e=Math.exp(z.re); return Cx(e*Math.cos(z.im),e*Math.sin(z.im)); };
+function cln(z){ if(z.re===0&&z.im===0) throw err(0); return Cx(Math.log(cabs(z)),Math.atan2(z.im,z.re)); }
+function csqrt(z){ if(z.im===0) return z.re>=0?Cx(Math.sqrt(z.re)):Cx(0,Math.sqrt(-z.re)); const r=cabs(z); const re=Math.sqrt((r+z.re)/2); return Cx(re,z.im/(2*re)); }
+const I1=Cx(0,1), ONE=Cx(1);
+const csin=z=>Cx(Math.sin(z.re)*Math.cosh(z.im),Math.cos(z.re)*Math.sinh(z.im));
+const ccos=z=>Cx(Math.cos(z.re)*Math.cosh(z.im),-Math.sin(z.re)*Math.sinh(z.im));
+const csinh=z=>Cx(Math.sinh(z.re)*Math.cos(z.im),Math.cosh(z.re)*Math.sin(z.im));
+const ccosh=z=>Cx(Math.cosh(z.re)*Math.cos(z.im),Math.sinh(z.re)*Math.sin(z.im));
+const casin=z=>cmul(Cx(0,-1),cln(cadd(cmul(I1,z),csqrt(csub(ONE,cmul(z,z))))));
+const CUN={
+  sqrt:csqrt, sq:z=>cmul(z,z), exp:cexp, ln:cln,
+  p10:z=>cexp(cmul(z,Cx(Math.LN10))), log:z=>{ const l=cln(z); return Cx(l.re/Math.LN10,l.im/Math.LN10); },
+  inv:z=>cdiv(ONE,z), abs:z=>Cx(cabs(z)),
+  sin:z=>z.im===0?Cx(Math.sin(z.re)):csin(z), cos:z=>z.im===0?Cx(Math.cos(z.re)):ccos(z), tan:z=>z.im===0?Cx(Math.tan(z.re)):cdiv(csin(z),ccos(z)),
+  sinh:z=>z.im===0?Cx(Math.sinh(z.re)):csinh(z), cosh:z=>z.im===0?Cx(Math.cosh(z.re)):ccosh(z), tanh:z=>z.im===0?Cx(Math.tanh(z.re)):cdiv(csinh(z),ccosh(z)),
+  asin:z=>(z.im===0&&Math.abs(z.re)<=1)?Cx(Math.asin(z.re)):casin(z),
+  acos:z=>(z.im===0&&Math.abs(z.re)<=1)?Cx(Math.acos(z.re)):csub(Cx(Math.PI/2),casin(z)),
+  atan:z=>z.im===0?Cx(Math.atan(z.re)):cmul(Cx(0,0.5),csub(cln(csub(ONE,cmul(I1,z))),cln(cadd(ONE,cmul(I1,z))))),
+  asinh:z=>z.im===0?Cx(Math.asinh(z.re)):cln(cadd(z,csqrt(cadd(cmul(z,z),ONE)))),
+  acosh:z=>(z.im===0&&z.re>=1)?Cx(Math.acosh(z.re)):cln(cadd(z,cmul(csqrt(cadd(z,ONE)),csqrt(csub(z,ONE))))),
+  atanh:z=>(z.im===0&&Math.abs(z.re)<1)?Cx(Math.atanh(z.re)):cmul(Cx(0.5),csub(cln(cadd(ONE,z)),cln(csub(ONE,z))))
+};
+const CBIN={ add:cadd, sub:csub, mul:cmul, div:cdiv,
+  pow:(y,x)=>{ if(y.re===0&&y.im===0){ if(x.re>0) return Cx(0); throw err(0); } if(y.im===0&&x.im===0&&(y.re>0||Number.isInteger(x.re))) return Cx(Math.pow(y.re,x.re)); return cexp(cmul(x,cln(y))); } };
+
+/* ---------- stack ---------- */
+function push(){ S.t=S.z; S.z=S.y; S.y=S.x; if(CX()){ const I=S.im; I.t=I.z; I.z=I.y; I.y=I.x; } }
+function dropYZ(){ S.y=S.z; S.z=S.t; if(CX()){ const I=S.im; I.y=I.z; I.z=I.t; } }
+function placeX(v,im=0){ const clearIm=S.lift||!S.keepIm; if(S.lift) push(); S.x=v; if(CX()&&clearIm) S.im.x=im; S.lift=true; S.keepIm=false; }
+function push2(yv,xv){ placeX(yv); placeX(xv); }
+
+/* ---------- number entry ---------- */
+function startEntry(){ const clearIm=S.lift||!S.keepIm; if(S.lift) push(); if(CX()&&clearIm) S.im.x=0; E={m:'',e:null,neg:false,eneg:false}; S.lift=true; S.keepIm=false; }
+function updX(){ const m=E.m===''||E.m==='.'?'0':E.m; S.x=round10(parseFloat((E.neg?'-':'')+m+'e'+(E.eneg?'-':'')+(E.e||'0'))); if(!isFinite(S.x)) S.x=(E.neg?-1:1)*9.999999999e99; }
+function entryDigit(d){
+  if(!E) startEntry();
+  if(E.e!==null){ E.e=(E.e.length>=2?E.e.slice(1):E.e)+d; }
+  else { if(E.m.replace('.','').length>=10) return; E.m=(E.m==='0')?d:E.m+d; }
+  updX();
+}
+function entryDot(){ if(!E) startEntry(); if(E.e!==null||E.m.includes('.')) return; E.m=(E.m||'0')+'.'; updX(); }
+function entryEex(){ if(!E){ startEntry(); E.m='1'; } if(E.e!==null) return; if(parseFloat(E.m||'0')===0) E.m='1'; E.e=''; updX(); }
+function doChs(){
+  if(E){ if(E.e!==null) E.eneg=!E.eneg; else E.neg=!E.neg; updX(); return; }
+  if(isD(S.x)){ const m=mat(S.x); m.d=m.d.map(v=>v===0?0:-v); m.lu=false; return; }
+  S.x=S.x===0?0:-S.x;
+}
+
+/* ---------- registers, indirect addressing and matrix elements ---------- */
+const mat=L=>S.mats[L];
+function regIndex(a){ return a[0]==='.'?10+(+a[1]):+a; }
+function ref(a,user){
+  if(a==='I') return {get:()=>S.ri,set:v=>{S.ri=v;}};
+  let L=null, idx;
+  if(a.length===1&&LET.includes(a)) L=a;
+  else if(a==='(i)'){ if(isD(S.ri)) L=S.ri; else idx=Math.trunc(Math.abs(S.ri)); }
+  else idx=regIndex(a);
+  if(L){
+    const m=mat(L), r=Math.trunc(num(S.regs[0])), c=Math.trunc(num(S.regs[1]));
+    if(r<1||c<1||r>m.r||c>m.c) throw err(3);
+    const k=(r-1)*m.c+(c-1);
+    lastElem={L,r,c};
+    return {get:()=>m.d[k],set:v=>{ if(isD(v)) throw err(1); m.d[k]=v; m.lu=false; },
+      advance:()=>{ if(!user) return false; let rr=r,cc=c+1; if(cc>m.c){ cc=1; rr++; } let wrap=false; if(rr>m.r){ rr=1; cc=1; wrap=true; } S.regs[0]=rr; S.regs[1]=cc; return wrap; }};
+  }
+  if(idx>65||idx>S.dd) throw err(3);
+  return {get:()=>S.regs[idx],set:v=>{S.regs[idx]=v;}};
+}
+function arith(a,b,code){ num(a); num(b); if(code===40) return a+b; if(code===30) return a-b; if(code===20) return a*b; if(b===0) throw err(0); return a/b; }
+function loopCtl(a,isg){
+  const R=ref(a,false), v=num(R.get()), sg=v<0?-1:1, av=Math.abs(v);
+  let n=sg*Math.floor(av); const f=Math.round((av-Math.floor(av))*1e5)/1e5;
+  const xy=Math.round(f*1e5), xxx=Math.floor(xy/100), yy=(xy%100)||1;
+  n=isg?n+yy:n-yy;
+  R.set(round10(n+(n<0?-f:f)));
+  return isg? n>xxx : n<=xxx;
+}
+function riInt(max,code){ const v=Math.trunc(Math.abs(num(S.ri))); if(v>max) throw err(code); return v; }
+function riLabel(){
+  if(isD(S.ri)) return {label:S.ri};
+  const v=Math.trunc(num(S.ri));
+  if(v<0) return {line:-v};
+  if(v<=9) return {label:String(v)}; if(v<=19) return {label:'.'+(v-10)}; if(v<=24) return {label:LET[v-20]};
+  throw err(4);
+}
+function setFlag(n,on){
+  if(n===8&&on&&!CX()){ if(freeRegs()<5) throw err(10); S.im={x:0,y:0,z:0,t:0,lastx:0}; }
+  if(n===8&&!on) S.im={x:0,y:0,z:0,t:0,lastx:0};
+  S.flags[n]=on;
+}
+const enableCx=()=>{ if(!CX()) setFlag(8,true); };
+
+/* ---------- matrices ---------- */
+function redim(L,r,c){
+  r=Math.trunc(Math.abs(num(r))); c=Math.trunc(Math.abs(num(c)));
+  if(r===0||c===0){ r=0; c=0; }
+  const m=mat(L), delta=r*c-m.r*m.c;
+  if(delta>0&&freeRegs()<delta) throw err(10);
+  const d=m.d.slice(0,r*c); while(d.length<r*c) d.push(0);
+  m.r=r; m.c=c; m.d=d; m.lu=false; m.piv=null;
+}
+function setMat(L,o){ redim(L,o.r,o.c); const m=mat(L); m.d=o.d.map(chk); if(o.lu){ m.lu=true; m.piv=o.piv; m.sign=o.sign; } }
+const mmap=(m,f)=>({r:m.r,c:m.c,d:m.d.map(f)});
+function mmul(a,b){ const out=new Array(a.r*b.c).fill(0); for(let i=0;i<a.r;i++) for(let j=0;j<b.c;j++){ let s=0; for(let k=0;k<a.c;k++) s+=a.d[i*a.c+k]*b.d[k*b.c+j]; out[i*b.c+j]=s; } return {r:a.r,c:b.c,d:out}; }
+const mtrans=m=>{ const d=new Array(m.r*m.c); for(let i=0;i<m.r;i++) for(let j=0;j<m.c;j++) d[j*m.r+i]=m.d[i*m.c+j]; return {r:m.c,c:m.r,d}; };
+function luOf(m){
+  if(m.r!==m.c||m.r===0) throw err(11);
+  if(m.lu&&m.piv) return {lu:m.d.slice(),piv:m.piv.slice(),sign:m.sign||1};
+  const n=m.r, a=m.d.slice(), piv=[...Array(n).keys()]; let sign=1, scale=0;
+  for(const v of a) scale=Math.max(scale,Math.abs(v)); if(scale===0) scale=1;
+  for(let k=0;k<n;k++){
+    let p=k, mx=Math.abs(a[k*n+k]);
+    for(let i=k+1;i<n;i++){ const v=Math.abs(a[i*n+k]); if(v>mx){ mx=v; p=i; } }
+    if(p!==k){ for(let j=0;j<n;j++){ const t=a[k*n+j]; a[k*n+j]=a[p*n+j]; a[p*n+j]=t; } const t=piv[k]; piv[k]=piv[p]; piv[p]=t; sign=-sign; }
+    if(a[k*n+k]===0) a[k*n+k]=1e-10*scale;               // singular: nudge the pivot, as the 15C does
+    for(let i=k+1;i<n;i++){ const f=a[i*n+k]/a[k*n+k]; a[i*n+k]=f; for(let j=k+1;j<n;j++) a[i*n+j]-=f*a[k*n+j]; }
+  }
+  return {lu:a,piv,sign};
+}
+function luSolve(F,n,b,k){
+  const x=new Array(n*k);
+  for(let col=0;col<k;col++){
+    const y=new Array(n);
+    for(let i=0;i<n;i++){ let s=b[F.piv[i]*k+col]; for(let j=0;j<i;j++) s-=F.lu[i*n+j]*y[j]; y[i]=s; }
+    for(let i=n-1;i>=0;i--){ let s=y[i]; for(let j=i+1;j<n;j++) s-=F.lu[i*n+j]*y[j]; y[i]=s/F.lu[i*n+i]; }
+    for(let i=0;i<n;i++) x[i*k+col]=y[i];
+  }
+  return x;
+}
+const ident=n=>{ const d=new Array(n*n).fill(0); for(let i=0;i<n;i++) d[i*n+i]=1; return d; };
+const minv=m=>{ const F=luOf(m); return {r:m.r,c:m.r,d:luSolve(F,m.r,ident(m.r),m.r)}; };
+function storeLU(L,F){ const m=mat(L); m.d=F.lu.map(chk); m.lu=true; m.piv=F.piv; m.sign=F.sign; }
+function matResult(out,lastX){ setMat(S.res,out); S.lastx=lastX; S.x=S.res; S.lift=true; }
+
+function matBin(k){
+  const X=S.x, Y=S.y, R=S.res; let out;
+  if(isD(X)&&isD(Y)){
+    const mx=mat(X), my=mat(Y);
+    if(k==='add'||k==='sub'){ if(mx.r!==my.r||mx.c!==my.c) throw err(11); out={r:mx.r,c:mx.c,d:my.d.map((v,i)=>k==='add'?v+mx.d[i]:v-mx.d[i])}; }
+    else if(k==='mul'){ if(my.c!==mx.r||R===X||R===Y) throw err(11); out=mmul(my,mx); }
+    else if(k==='div'){ if(mx.r!==mx.c||my.r!==mx.r||R===X) throw err(11); const F=luOf(mx); storeLU(X,F); out={r:mx.r,c:my.c,d:luSolve(F,mx.r,my.d,my.c)}; }
+    else throw err(1);
+  } else if(isD(Y)){
+    const m=mat(Y), s=num(X);
+    if(k==='add') out=mmap(m,v=>v+s); else if(k==='sub') out=mmap(m,v=>v-s); else if(k==='mul') out=mmap(m,v=>v*s);
+    else if(k==='div'){ if(s===0) throw err(0); out=mmap(m,v=>v/s); } else throw err(1);
+  } else {
+    const m=mat(X), s=num(Y);
+    if(k==='add') out=mmap(m,v=>s+v); else if(k==='sub') out=mmap(m,v=>s-v); else if(k==='mul') out=mmap(m,v=>s*v);
+    else if(k==='div'){ if(m.r!==m.c) throw err(11); out=mmap(minv(m),v=>s*v); } else throw err(1);
+  }
+  matResult(out,X); dropYZ();
+}
+function matrixFn(n,inProg){
+  const X=S.x;
+  switch(n){
+    case 0: for(const L of LET){ const m=mat(L); m.r=0; m.c=0; m.d=[]; m.lu=false; m.piv=null; } return;
+    case 1: S.regs[0]=1; S.regs[1]=1; return;
+    case 7: case 8: {
+      S.lastx=X;
+      if(!isD(X)){ if(inProg) S.pc++; return; }
+      const m=mat(X); let v=0;
+      if(n===7){ for(let i=0;i<m.r;i++){ let s=0; for(let j=0;j<m.c;j++) s+=Math.abs(m.d[i*m.c+j]); v=Math.max(v,s); } }
+      else v=Math.sqrt(m.d.reduce((s,a)=>s+a*a,0));
+      S.x=chk(v); S.lift=true; return; }
+  }
+  if(!isD(X)) throw err(11);
+  const m=mat(X);
+  switch(n){
+    case 2: { if(m.r%2) throw err(11); const h=m.r/2, c=m.c, d=new Array(m.r*2*c);
+      for(let i=0;i<m.r;i++) for(let j=0;j<2*c;j++){ const top=i<h, left=j<c, ii=top?i:i-h, jj=left?j:j-c;
+        const Xv=m.d[ii*c+jj], Yv=m.d[(ii+h)*c+jj]; d[i*2*c+j]= top?(left?Xv:-Yv):(left?Yv:Xv); }
+      setMat(X,{r:m.r,c:2*c,d}); return; }
+    case 3: { if(m.c%2) throw err(11); const c=m.c/2, d=[]; for(let i=0;i<m.r;i++) for(let j=0;j<c;j++) d.push(m.d[i*m.c+j]); setMat(X,{r:m.r,c,d}); return; }
+    case 4: setMat(X,mtrans(m)); return;
+    case 5: { const Y=S.y; if(!isD(Y)) throw err(11); const my=mat(Y); if(my.r!==m.r||S.res===X||S.res===Y) throw err(11); matResult(mmul(mtrans(my),m),X); dropYZ(); return; }
+    case 6: { const Y=S.y; if(!isD(Y)) throw err(11); const my=mat(Y), R=S.res, mr=mat(R); if(R===X||R===Y||my.c!==m.r||mr.r!==my.r||mr.c!==m.c) throw err(11);
+      const p=mmul(my,m); matResult({r:mr.r,c:mr.c,d:mr.d.map((v,i)=>v-p.d[i])},X); dropYZ(); return; }
+    case 9: { const F=luOf(m); let det=F.sign; for(let i=0;i<m.r;i++) det*=F.lu[i*m.r+i];
+      if(S.res===X) storeLU(X,F); else { setMat(S.res,{r:m.r,c:m.c,d:F.lu}); storeLU(S.res,F); }
+      S.lastx=X; S.x=chk(det); S.lift=true; return; }
+  }
+}
+function zcToZp(L){ const m=mat(L); if(m.c%2) throw err(11); const c=m.c/2, d=new Array(m.r*m.c);
+  for(let i=0;i<m.r;i++) for(let j=0;j<c;j++){ d[i*c+j]=m.d[i*m.c+2*j]; d[(i+m.r)*c+j]=m.d[i*m.c+2*j+1]; } setMat(L,{r:2*m.r,c,d}); }
+function zpToZc(L){ const m=mat(L); if(m.r%2) throw err(11); const h=m.r/2, d=new Array(m.r*m.c);
+  for(let i=0;i<h;i++) for(let j=0;j<m.c;j++){ d[i*2*m.c+2*j]=m.d[i*m.c+j]; d[i*2*m.c+2*j+1]=m.d[(i+h)*m.c+j]; } setMat(L,{r:h,c:2*m.c,d}); }
+
+/* ---------- program flow ---------- */
+function findLabel(L){
+  const n=S.prog.length;
+  for(let i=1;i<=n;i++){ const line=((S.pc+i-1)%n)+1; const ins=S.prog[line-1]; if(ins.k==='lbl'&&ins.a===L) return line; }
+  throw err(4);
+}
+function target(a){ if(a!=='I') return findLabel(a); const t=riLabel(); if(t.line!==undefined){ if(t.line>S.prog.length) throw err(4); return t.line; } return findLabel(t.label); }
+function doRtn(){ if(!S.ret.length){ S.pc=0; return 'halt'; } const r=S.ret.pop(); if(r===SENT) return 'sentinel'; S.pc=r; }
+function step(){
+  const n=S.prog.length; if(!n) return 'halt';
+  S.pc++; if(S.pc>n) return doRtn();
+  return exec(S.prog[S.pc-1],true);
+}
+function cond(c,inProg){ if(inProg){ if(!c) S.pc++; } else flash(c?'  trUE':'  FALSE',900); }
+
+function evalAt(line,x){
+  E=null; S.x=S.y=S.z=S.t=x; S.lift=true;
+  const savePc=S.pc; S.ret.push(SENT); S.pc=line;
+  for(let n=0;;n++){
+    if(n>200000) throw err(7);
+    const r=step();
+    if(r==='sentinel') break;
+    if(r==='halt') throw err(5);
+  }
+  S.pc=savePc; E=null;
+  return num(S.x);
+}
+function zeroin(f,a,b,fa,fb){
+  let c=a,fc=fa,d=b-a,e=d;
+  for(let i=0;i<1500;i++){
+    if((fb>0&&fc>0)||(fb<0&&fc<0)){ c=a; fc=fa; d=e=b-a; }
+    if(Math.abs(fc)<Math.abs(fb)){ a=b; b=c; c=a; fa=fb; fb=fc; fc=fa; }
+    const tol=2e-13*Math.abs(b)+1e-99, m=0.5*(c-b);
+    if(Math.abs(m)<=tol||fb===0) return {r:b,o:c,fr:fb};
+    if(Math.abs(e)<tol||Math.abs(fa)<=Math.abs(fb)){ d=m; e=m; }
+    else{
+      let s=fb/fa,p,q;
+      if(a===c){ p=2*m*s; q=1-s; }
+      else{ q=fa/fc; const r=fb/fc; p=s*(2*m*q*(q-r)-(b-a)*(r-1)); q=(q-1)*(r-1)*(s-1); }
+      if(p>0) q=-q; else p=-p;
+      if(2*p<Math.min(3*m*q-Math.abs(tol*q),Math.abs(e*q))){ e=d; d=p/q; } else { d=m; e=m; }
+    }
+    a=b; fa=fb; b+=Math.abs(d)>tol?d:(m>0?tol:-tol); fb=f(b);
+  }
+  return {r:b,o:c,fr:fb};
+}
+function doSolve(L,inProg){
+  if(inSolve) throw err(7);
+  if(freeRegs()<5) throw err(10);
+  const line=findLabel(L), f=x=>evalAt(line,x);
+  let a=num(S.y), b=num(S.x);
+  inSolve=true;
+  try{
+    if(a===b) b=a===0?1e-7:a*(1+1e-7);
+    let fa=f(a), fb=f(b), res=null, maxF=Math.max(Math.abs(fa),Math.abs(fb));
+    if(fa===0) res={r:a,o:b,fr:0}; else if(fb===0) res={r:b,o:a,fr:0};
+    let stall=0;
+    for(let it=0;!res&&it<150;it++){
+      if(Math.sign(fa)!==Math.sign(fb)){ res=zeroin(f,a,b,fa,fb); break; }
+      let c=fb===fa?b+2*(b-a):b-fb*(b-a)/(fb-fa);
+      const maxStep=100*Math.abs(b-a)+1e-7;
+      if(Math.abs(c-b)>maxStep) c=b+Math.sign(c-b)*maxStep;
+      if(!isFinite(c)) break;
+      const fc=f(c); maxF=Math.max(maxF,Math.abs(fc));
+      if(fc===0){ res={r:c,o:b,fr:0}; break; }
+      stall=Math.abs(fc)>=Math.abs(fb)?stall+1:0;
+      a=b; fa=fb; b=c; fb=fc;
+      if(stall>14) break;
+      if(Math.abs(b-a)<=1e-12*Math.max(1,Math.abs(b))){ if(Math.abs(fb)<=1e-10*maxF) res={r:b,o:a,fr:fb}; break; }
+    }
+    if(!res){ S.x=chk(b); S.y=chk(a); S.z=chk(fb); S.lift=true; if(inProg){ S.pc++; return; } throw err(8); }
+    S.x=chk(res.r); S.y=chk(res.o); S.z=chk(res.fr); S.lift=true;
+  } finally { inSolve=false; }
+}
+const XGK=[0.991455371120812639,0.949107912342758525,0.864864423359769073,0.741531185599394440,0.586087235467691130,0.405845151377397167,0.207784955007898468,0];
+const WGK=[0.022935322010529225,0.063092092629978553,0.104790010322250184,0.140653259715525919,0.169004726639267903,0.190350578064785410,0.204432940075298892,0.209482141084727828];
+const WG=[0.129484966168869693,0.279705391489276668,0.381830050505118945,0.417959183673469388];
+function gk(f,a,b){
+  const c=(a+b)/2,h=(b-a)/2,fc=f(c); let K=fc*WGK[7],G=fc*WG[3];
+  for(let j=0;j<7;j++){ const dx=h*XGK[j], s=f(c-dx)+f(c+dx); K+=WGK[j]*s; if(j%2===1) G+=WG[(j-1)/2]*s; }
+  return {a,b,K:K*h,err:Math.abs(K-G)*h};
+}
+function doInteg(L){
+  if(inInteg) throw err(7);
+  if(freeRegs()<(inSolve?18:23)) throw err(10);
+  const line=findLabel(L), f=x=>evalAt(line,x);
+  const a=num(S.y), b=num(S.x); let I=0,Er=0;
+  inInteg=true;
+  try{
+    if(a!==b){
+      const tolFor=I=>0.5*Math.pow(10,-S.dig)*(S.fmt==='FIX'?Math.abs(b-a):Math.max(Math.abs(I),1e-99));
+      const ints=[gk(f,a,b)];
+      for(;;){
+        I=0; Er=0; let w=0; ints.forEach((s,i)=>{ I+=s.K; Er+=s.err; if(s.err>ints[w].err) w=i; });
+        if(Er<=tolFor(I)||ints.length>=300) break;
+        const s=ints[w], m=(s.a+s.b)/2; ints.splice(w,1,gk(f,s.a,m),gk(f,m,s.b));
+      }
+    }
+  } finally { inInteg=false; }
+  S.t=a; S.z=b; S.y=chk(Er); S.x=chk(I); S.lastx=b; S.lift=true;
+}
+
+/* ---------- execute one instruction ---------- */
+const NEUTRAL=new Set(['fix','sci','eng','deg','rad','grd','lbl','clrReg','clrSigma','pse','rs','sf','cf','result','matrix']);
+function exec(ins,inProg){
+  const k=ins.k, a=ins.a;
+  if(k.length===2&&k[0]==='d'&&k[1]>='0'&&k[1]<='9'){ entryDigit(k[1]); return; }
+  if(k==='dot'){ entryDot(); return; }
+  if(k==='eex'){ entryEex(); return; }
+  if(k==='chs'){ doChs(); return; }
+  E=null;
+  const keep=S.keepIm; if(!NEUTRAL.has(k)) S.keepIm=false;
+  const R=S.regs, cx=CX();
+  // matrix-aware arithmetic
+  if((k==='add'||k==='sub'||k==='mul'||k==='div')&&(isD(S.x)||isD(S.y))) return matBin(k);
+  if(k==='inv'&&isD(S.x)){ const m=mat(S.x); if(m.r!==m.c) throw err(11); matResult(minv(m),S.x); return; }
+  if((k==='perm'||k==='comb')&&isD(S.x)){ (k==='perm'?zcToZp:zpToZc)(S.x); return; }
+  if(cx&&CUN[k]){ const z=Cx(num(S.x),S.im.x), r=CUN[k](z), re=chk(r.re), im=chk(r.im); S.lastx=S.x; S.im.lastx=S.im.x; S.x=re; S.im.x=im; S.lift=true; return; }
+  if(cx&&CBIN[k]){ const r=CBIN[k](Cx(num(S.y),S.im.y),Cx(num(S.x),S.im.x)), re=chk(r.re), im=chk(r.im); S.lastx=S.x; S.im.lastx=S.im.x; S.x=re; S.im.x=im; dropYZ(); S.lift=true; return; }
+  if(UN[k]){ const x=num(S.x), r=chk(UN[k](x)); S.lastx=x; if(cx) S.im.lastx=S.im.x; S.x=r; S.lift=true; return; }
+  if(BIN[k]){ const r=chk(BIN[k](num(S.y),num(S.x))); S.lastx=S.x; if(cx) S.im.lastx=S.im.x; S.x=r; dropYZ(); S.lift=true; return; }
+  switch(k){
+    case 'enter': push(); S.lift=false; return;
+    case 'clx': S.x=0; S.lift=false; S.keepIm=true; return;
+    case 'rdn': { const x=S.x; S.x=S.y; S.y=S.z; S.z=S.t; S.t=x; if(cx){ const I=S.im, xi=I.x; I.x=I.y; I.y=I.z; I.z=I.t; I.t=xi; } S.lift=true; return; }
+    case 'rup': { const t=S.t; S.t=S.z; S.z=S.y; S.y=S.x; S.x=t; if(cx){ const I=S.im, ti=I.t; I.t=I.z; I.z=I.y; I.y=I.x; I.x=ti; } S.lift=true; return; }
+    case 'swap': { const x=S.x; S.x=S.y; S.y=x; if(cx){ const I=S.im, xi=I.x; I.x=I.y; I.y=xi; } S.lift=true; return; }
+    case 'lastx': placeX(S.lastx); if(cx) S.im.x=S.im.lastx; return;
+    case 'pi': placeX(PI10); return;
+    case 'ran': placeX(round10(nextRan())); return;
+    case 'stoRan': { let v=Math.abs(num(S.x)); v=v-Math.floor(v); S.seed=round10(v); S.lift=true; return; }
+    case 'rclRan': placeX(S.seed); return;
+    case 'pct': { const r=chk(num(S.y)*num(S.x)/100); S.lastx=S.x; S.x=r; S.lift=true; return; }
+    case 'dpct': { if(num(S.y)===0) throw err(0); const r=chk(100*(num(S.x)-S.y)/S.y); S.lastx=S.x; S.x=r; S.lift=true; return; }
+    case 'toP': {
+      if(cx){ const re=num(S.x), im=S.im.x, r=chk(Math.hypot(re,im)), th=chk(fromRad(Math.atan2(im,re))); S.lastx=re; S.im.lastx=im; S.x=r; S.im.x=th; S.lift=true; return; }
+      const x=num(S.x),y=num(S.y), r=chk(Math.hypot(x,y)), th=chk(fromRad(Math.atan2(y,x))); S.lastx=x; S.x=r; S.y=th; S.lift=true; return; }
+    case 'toR': {
+      if(cx){ const r=num(S.x), th=S.im.x, re=chk(r*cosA(th)), im=chk(r*sinA(th)); S.lastx=r; S.im.lastx=th; S.x=re; S.im.x=im; S.lift=true; return; }
+      const r=num(S.x), th=num(S.y), nx=chk(r*cosA(th)), ny=chk(r*sinA(th)); S.lastx=r; S.x=nx; S.y=ny; S.lift=true; return; }
+    case 'splus': case 'sminus': {
+      if(S.dd<7) throw err(3);
+      const s=k==='splus'?1:-1, x=num(S.x), y=num(S.y); for(let i=2;i<=7;i++) num(R[i]);
+      R[2]=chk(R[2]+s); R[3]=chk(R[3]+s*x); R[4]=chk(R[4]+s*x*x); R[5]=chk(R[5]+s*y); R[6]=chk(R[6]+s*y*y); R[7]=chk(R[7]+s*x*y);
+      S.lastx=x; S.x=R[2]; S.lift=false; return; }
+    case 'mean': { const n=num(R[2]); if(n===0) throw err(2); push2(chk(R[5]/n),chk(R[3]/n)); return; }
+    case 'sdev': { const n=num(R[2]); if(n<=1) throw err(2); const dx=n*R[4]-R[3]*R[3], dy=n*R[6]-R[5]*R[5]; if(dx<0||dy<0) throw err(2);
+      push2(chk(Math.sqrt(dy/(n*(n-1)))),chk(Math.sqrt(dx/(n*(n-1))))); return; }
+    case 'lr': case 'yhat': {
+      const n=num(R[2]); if(n<=1) throw err(2); const den=n*R[4]-R[3]*R[3]; if(den===0) throw err(2);
+      const M=(n*R[7]-R[3]*R[5])/den, B=(R[5]-M*R[3])/n;
+      if(k==='lr'){ push2(chk(M),chk(B)); return; }
+      const dy=n*R[6]-R[5]*R[5]; if(dy<=0) throw err(2);
+      const r=(n*R[7]-R[3]*R[5])/Math.sqrt(den*dy), x=num(S.x), yh=chk(B+M*x);
+      S.lastx=x; S.x=chk(r); push(); S.x=yh; S.lift=true; return; }
+    case 'clrSigma': for(let i=2;i<=7;i++) R[i]=0; S.x=S.y=S.z=S.t=0; if(cx) S.im={x:0,y:0,z:0,t:0,lastx:S.im.lastx}; return;
+    case 'clrReg': S.regs=Array(66).fill(0); S.ri=0; return;
+    case 'sto': { const user=ins.u||(!inProg&&S.user), Rf=ref(a,user);
+      if(ins.ar) Rf.set(chk(arith(Rf.get(),S.x,ins.ar))); else Rf.set(S.x);
+      S.lift=true; if(Rf.advance&&Rf.advance()&&inProg&&ins.u) S.pc++; return; }
+    case 'rcl': { const user=ins.u||(!inProg&&S.user), Rf=ref(a,user), v=Rf.get();
+      if(ins.ar){ const r=chk(arith(S.x,v,ins.ar)); S.lastx=S.x; S.x=r; S.lift=true; } else placeX(v);
+      if(Rf.advance&&Rf.advance()&&inProg&&ins.u) S.pc++; return; }
+    case 'xch': { const Rf=ref(a,false), v=Rf.get(); Rf.set(S.x); S.x=v; S.lift=true; return; }
+    case 'dse': case 'isg': { const skip=loopCtl(a,k==='isg'); if(inProg&&skip) S.pc++; return; }
+    case 'fix': case 'sci': case 'eng': S.fmt=k.toUpperCase(); S.dig=a==='I'?Math.max(0,Math.min(9,Math.trunc(num(S.ri)))):+a; return;
+    case 'deg': S.ang='DEG'; return; case 'rad': S.ang='RAD'; return; case 'grd': S.ang='GRAD'; return;
+    case 'sf': case 'cf': setFlag(a==='I'?riInt(9,6):+a,k==='sf'); return;
+    case 'fq': return cond(!!S.flags[a==='I'?riInt(9,6):+a],inProg);
+    case 'xley': return cond(num(S.x)<=num(S.y),inProg);
+    case 'xeq0': return cond(isD(S.x)?false:(S.x===0&&(!cx||S.im.x===0)),inProg);
+    case 'test': {
+      const t=+a, x=S.x, y=S.y;
+      if(t===0) return cond(isD(x)?true:(x!==0||(cx&&S.im.x!==0)),inProg);
+      if(t===5||t===6){ const eq=(isD(x)||isD(y))?x===y:(x===y&&(!cx||S.im.x===S.im.y)); return cond(t===5?eq:!eq,inProg); }
+      const xn=num(x), yn=num(y);
+      return cond([null,xn>0,xn<0,xn>=0,xn<=0,null,null,xn>yn,xn<yn,xn>=yn][t],inProg); }
+    case 'solve': return doSolve(a,inProg);
+    case 'integ': return doInteg(a);
+    case 'lbl': return;
+    case 'gto': S.pc=target(a); return;
+    case 'gsb': { const line=target(a); if(S.ret.length>=7) throw err(5); S.ret.push(S.pc); S.pc=line; return; }
+    case 'rtn': return doRtn();
+    case 'rs': return 'halt';
+    case 'pse': return 'pse';
+    case 'cplxI': { const re=num(S.y), im=num(S.x); enableCx(); S.x=re; S.im.x=im; S.y=S.z; S.z=S.t; S.im.y=S.im.z; S.im.z=S.im.t; S.lift=true; return; }
+    case 'reim': { num(S.x); enableCx(); const t=S.x; S.x=S.im.x; S.im.x=t; S.lift=true; return; }
+    case 'dim': {
+      if(a==='(i)'){ let dd=Math.trunc(num(S.x)); if(dd<1) dd=1; if(dd>65) throw err(10);
+        if(65-dd-progRegs()-matElems()-(cx?5:0)<0) throw err(10);
+        for(let i=dd+1;i<66;i++) S.regs[i]=0; S.dd=dd; return; }
+      const L=a==='I'?(isD(S.ri)?S.ri:null):a; if(!L) throw err(11);
+      redim(L,S.y,S.x); return; }
+    case 'rclDim': {
+      if(a==='(i)'){ placeX(S.dd); return; }
+      const L=a==='I'?(isD(S.ri)?S.ri:null):a; if(!L) throw err(11);
+      const m=mat(L); push2(m.r,m.c); return; }
+    case 'matrix': return matrixFn(+a,inProg);
+    case 'result': S.res=a; return;
+    case 'stoRes': if(!isD(S.x)) throw err(11); S.res=S.x; return;
+    case 'rclRes': placeX(S.res); return;
+    case 'rclM': placeX(a); return;
+    case 'stoM': {
+      if(isD(S.x)){ const src=mat(S.x); if(S.x!==a) setMat(a,{r:src.r,c:src.c,d:src.d.slice()}); }
+      else { const v=S.x, m=mat(a); m.d=m.d.map(()=>v); m.lu=false; }
+      S.lift=true; return; }
+    case 'stoG': case 'rclG': {
+      const L=a==='(i)'?(isD(S.ri)?S.ri:null):a; if(!L) throw err(11);
+      const m=mat(L), r=Math.trunc(num(S.y)), c=Math.trunc(num(S.x));
+      if(r<1||c<1||r>m.r||c>m.c) throw err(3);
+      const i=(r-1)*m.c+(c-1);
+      if(k==='stoG'){ const v=num(S.z); m.d[i]=v; m.lu=false; S.x=v; S.y=S.t; S.z=S.t; }
+      else { S.x=m.d[i]; S.y=S.z; S.z=S.t; }
+      S.lift=true; return; }
+  }
+}
+
+/* ---------- running ---------- */
+function startRun(){ if(!S.prog.length) return; E=null; running=true; pauseShow=false; runTimer=setTimeout(runChunk,0); }
+function stopRun(){ running=false; pauseShow=false; clearTimeout(runTimer); }
+function runChunk(){
+  const t0=performance.now();
+  try{
+    while(running&&performance.now()-t0<25){
+      const r=step();
+      if(r==='halt'){ running=false; break; }
+      if(r==='pse'){ pauseShow=true; render(); runTimer=setTimeout(()=>{ pauseShow=false; if(running) runChunk(); },900); return; }
+    }
+  }catch(e){ showError(e); }
+  render(); save();
+  if(running) runTimer=setTimeout(runChunk,0);
+}
+function showError(e){
+  if(!(e instanceof CalcErr)){ console.error(e); e=err(9); }
+  errorCode=e.n; stopRun(); S.ret=S.ret.filter(v=>v!==SENT); E=null; pending=null; inSolve=false; inInteg=false;
+}
+
+/* ---------- key handling ---------- */
+function keySpec(code,sh){
+  const K=KEYMAP[code]; if(!K) return null;
+  let plane=sh||'m';
+  if(S.user&&code>=11&&code<=15&&plane!=='g') plane=plane==='m'?'f':'m';
+  return plane==='f'?K.fo:plane==='g'?K.go:K.o;
+}
+const letterOf=code=>(code>=11&&code<=15)?LET[code-11]:null;
+function labelFrom(code,p){ if(code>=11&&code<=15) return p.dot?null:LET[code-11]; if(code>=0&&code<=9) return (p.dot?'.':'')+code; return null; }
+function regFrom(code,p){
+  if(code>=0&&code<=9) return (p.dot?'.':'')+code;
+  if(p.dot) return null;
+  if(code===25) return 'I'; if(code===24) return '(i)';
+  return letterOf(code);
+}
+const DOTOK=['sto','rcl','lbl','gto','gsb','solve','integ','xch','dse','isg'];
+function handlePending(code,sh){
+  const p=pending, t=p.t, sr=(t==='sto'||t==='rcl');
+  if(sr&&!p.ar&&!p.dot&&!p.sub){
+    if(sh==='f'&&code===16){ p.sub='mat'; return; }
+    if(sh==='f'&&code===26){ pending=null; doIns({k:t==='sto'?'stoRes':'rclRes'}); return; }
+    if(sh==='f'&&code===36){ pending=null; doIns({k:t==='sto'?'stoRan':'rclRan'}); return; }
+    if(t==='rcl'&&sh==='f'&&code===23){ p.sub='dim'; return; }
+    if(sh==='g'){ pending=null; const a=letterOf(code)||(code===24?'(i)':null); if(a) doIns({k:t==='sto'?'stoG':'rclG',a}); return; }
+  }
+  if(p.sub==='mat'){ pending=null; const L=letterOf(code); if(L) doIns({k:t==='sto'?'stoM':'rclM',a:L}); return; }
+  if(p.sub==='dim'){ pending=null; const a=letterOf(code)||(code===25?'I':code===24?'(i)':null); if(a) doIns({k:'rclDim',a}); return; }
+  if(code===48&&!p.dot&&DOTOK.includes(t)){ p.dot=true; return; }
+  if(sr&&!p.ar&&!p.dot&&ARSYM[code]){ p.ar=code; return; }
+  if(t==='gto'&&code===16&&!p.dot){ pending={t:'gtoline',buf:''}; return; }
+  pending=null;
+  let ins=null;
+  switch(t){
+    case 'gtoline':
+      if(code>9) return;
+      p.buf+=code; if(p.buf.length<3){ pending=p; return; }
+      if(+p.buf>S.prog.length) throw err(4); S.pc=+p.buf; S.ret=[]; return;
+    case 'sto': case 'rcl': case 'xch': case 'dse': case 'isg': { const r=regFrom(code,p); if(r==null) return; ins={k:t,a:r}; if(p.ar) ins.ar=p.ar; break; }
+    case 'fix': case 'sci': case 'eng': case 'sf': case 'cf': case 'fq':
+      if(code===25){ ins={k:t,a:'I'}; break; }
+      if(code>9) return; ins={k:t,a:String(code)}; break;
+    case 'test': case 'matrix': if(code>9) return; ins={k:t,a:String(code)}; break;
+    case 'gto': case 'gsb': if(code===25&&!p.dot){ ins={k:t,a:'I'}; break; }
+    /* falls through */
+    case 'lbl': case 'solve': case 'integ': { const l=labelFrom(code,p); if(l==null) return; ins={k:t,a:l}; break; }
+    case 'dim': { const a=letterOf(code)||(code===25?'I':code===24?'(i)':null); if(!a) return; ins={k:'dim',a}; break; }
+    case 'result': { const L=letterOf(code); if(!L) return; ins={k:'result',a:L}; break; }
+    case 'hyp': case 'ahyp': { const m={23:'sin',24:'cos',25:'tan'}[code]; if(!m) return; ins={k:(t==='hyp'?'':'a')+m+'h'}; break; }
+  }
+  if(ins) doIns(ins);
+}
+function doIns(ins){
+  if(S.prgm){
+    if((ins.k==='sto'||ins.k==='rcl')&&!ins.ar&&S.user&&((ins.a.length===1&&LET.includes(ins.a))||ins.a==='(i)')) ins.u=true;
+    const before=progRegs();
+    S.prog.splice(S.pc,0,ins);
+    if(progRegs()>before&&freeRegs()<0){ S.prog.splice(S.pc,1); throw err(4); }
+    S.pc++; progVer++; return;
+  }
+  switch(ins.k){
+    case 'rs': startRun(); return;
+    case 'gsb': E=null; S.ret=[]; S.pc=target(ins.a); startRun(); return;
+    case 'gto': E=null; S.pc=target(ins.a); S.ret=[]; return;
+    case 'rtn': E=null; S.pc=0; S.ret=[]; return;
+    case 'lbl': case 'pse': E=null; return;
+  }
+  lastElem=null;
+  exec(ins,false);
+  if(lastElem&&(ins.k==='sto'||ins.k==='rcl')) flashCells(elemCells(lastElem),350);
+}
+function back(){
+  if(S.prgm){ if(S.pc>0){ S.prog.splice(S.pc-1,1); S.pc--; progVer++; } return; }
+  S.flags[9]=false;
+  if(E){
+    if(E.e!==null){ if(E.e.length) E.e=E.e.slice(0,-1); else { E.e=null; E.eneg=false; } updX(); return; }
+    E.m=E.m.slice(0,-1);
+    if(E.m===''){ E=null; S.x=0; S.lift=false; S.keepIm=true; } else updX();
+    return;
+  }
+  S.x=0; S.lift=false; S.keepIm=true;
+}
+function dispatch(op){
+  if(op[0]==='@'){ pending={t:op.slice(1)}; return; }
+  if(op.startsWith('gsb:')){ doIns({k:'gsb',a:op.slice(4)}); return; }
+  switch(op){
+    case 'prgm': S.prgm=!S.prgm; E=null; S.ret=[]; return;
+    case 'user': S.user=!S.user; return;
+    case 'prefix': { E=null; if(isD(S.x)) return; const d=S.x===0?'0000000000':Math.abs(S.x).toExponential(9).replace(/e.*$/,'').replace('.',''); flash(' '+d,1500); return; }
+    case 'showIm': { E=null; S.lift=true; flashCells(numCells(CX()?S.im.x:0),1500); return; }
+    case 'mem': { const b=progBytes(), pp=Math.ceil(b/7), rem=pp*7-b;
+      flash(' '+String(S.dd).padStart(2)+' '+String(freeRegs()).padStart(2)+' '+String(pp).padStart(2)+'-'+rem,1800); return; }
+    case 'sst':
+      if(S.prgm){ S.pc=S.pc>=S.prog.length?0:S.pc+1; return; }
+      if(!S.prog.length) return;
+      E=null; if(S.pc>=S.prog.length) S.pc=0;
+      { const line=S.pc+1; step(); flashCells(lineCells(line),500); }
+      return;
+    case 'bst':
+      S.pc=S.pc<=0?S.prog.length:S.pc-1;
+      if(!S.prgm) flashCells(lineCells(S.pc),600);
+      return;
+    case 'clrPrgm': if(S.prgm){ S.prog=[]; progVer++; } S.pc=0; S.ret=[]; return;
+    case 'back': back(); return;
+  }
+  doIns({k:op});
+}
+function press(code){
+  if(!S.on){
+    if(code===41){
+      if(offArm===30){ S=fresh(false); progVer++; errorCode='Pr'; }
+      else if(offArm===48) S.sep=!S.sep;
+      offArm=null; S.on=true; render(); save(); return;
+    }
+    if(code===30||code===48) offArm=code;
+    return;
+  }
+  if(code===41){ stopRun(); S.on=false; shift=null; pending=null; E=null; errorCode=null; msg=null; statusMsg=''; S.flags[9]=false; offArm=null; render(); save(); return; }
+  if(running){ stopRun(); render(); save(); return; }
+  if(msg){ msg=null; clearTimeout(msgTimer); }
+  statusMsg='';
+  if(errorCode!==null){ errorCode=null; shift=null; pending=null; render(); return; }
+  if(code===42||code===43){ const s=code===42?'f':'g'; shift=shift===s?null:s; render(); return; }
+  const sh=shift; shift=null;
+  try{
+    if(pending) handlePending(code,sh);
+    else { const op=keySpec(code,sh); if(op) dispatch(op); }
+  }catch(e){ showError(e); }
+  render(); save();
+}
+
+/* ---------- display ---------- */
+const SEGMAP={'0':'abcdef','1':'bc','2':'abdeg','3':'abcdg','4':'bcfg','5':'acdfg','6':'acdefg','7':'abc','8':'abcdefg','9':'abcdfg','-':'g',' ':'',
+  'E':'adefg','r':'eg','o':'cdeg','n':'ceg','i':'c','g':'abcdfg','u':'cde','U':'bcdef','P':'abefg','S':'acdfg','t':'defg','F':'aefg','A':'abcefg','L':'def','C':'adef','b':'cdefg','d':'bcdeg'};
+function cellsFromString(str){
+  const c=[];
+  for(const ch of str){
+    if(ch==='.'||ch===','){ const p=c[c.length-1]; if(p&&!p.dp) p.dp=ch; else c.push({ch:' ',dp:ch}); }
+    else c.push({ch,dp:null});
+  }
+  return c;
+}
+function pad11(c){ c=c.slice(0,11); while(c.length<11) c.push({ch:' ',dp:null}); return c; }
+function right11(c){ c=c.slice(-11); while(c.length<11) c.unshift({ch:' ',dp:null}); return c; }
+const group=ip=>ip.replace(/\B(?=(\d{3})+(?!\d))/g,',');
+function fixParts(ax,n){
+  if(ax>=1e10) return null;
+  const intDigits=ax<1?1:Math.floor(Math.log10(ax))+1;
+  let dec=Math.max(0,Math.min(n,10-intDigits));
+  let s=ax.toFixed(dec), [ip,fp='']=s.split('.');
+  if(ip.length>10) return null;
+  if(ip.length+fp.length>10){ dec=Math.max(0,10-ip.length); s=ax.toFixed(dec); [ip,fp='']=s.split('.'); }
+  if(ax!==0&&parseFloat(s)===0) return null;
+  return {ip,fp};
+}
+function sciCells(neg,ax,n,eng){
+  const m=Math.min(n,6); let mant,e;
+  if(ax===0){ mant='0.'+'0'.repeat(m); e=0; }
+  else{
+    [mant,e]=ax.toExponential(Math.min(n,9)).split('e'); e=+e;
+    if(n>6){ mant=parseFloat(mant).toFixed(m); if(+mant>=10){ mant=(+mant/10).toFixed(m); e++; } }
+    if(e>99){ mant='9.'+'9'.repeat(m); e=99; }
+    if(eng){ const e3=Math.floor(e/3)*3, sh=e-e3; let d=mant.replace('.',''); while(d.length<sh+1) d+='0'; mant=d.slice(0,sh+1)+'.'+d.slice(sh+1); e=e3; }
+    else if(!mant.includes('.')) mant+='.';
+  }
+  const c=cellsFromString((neg?'-':' ')+mant).slice(0,8);
+  while(c.length<8) c.push({ch:' ',dp:null});
+  return c.concat(cellsFromString((e<0?'-':' ')+String(Math.abs(e)).padStart(2,'0')));
+}
+const DNAME={A:'A',B:'b',C:'C',D:'d',E:'E'};
+function descCells(L){ const m=mat(L); return pad11(cellsFromString(' '+DNAME[L]+(m.lu?'--':'  ')+String(m.r).padStart(4)+String(m.c).padStart(3))); }
+function elemCells(o){ return pad11(cellsFromString(' '+DNAME[o.L]).concat(right11(cellsFromString(o.r+','+o.c)).slice(2))); }
+function numCells(x){
+  if(isD(x)) return descCells(x);
+  const neg=x<0, ax=Math.abs(x);
+  if(S.fmt==='FIX'){ const f=fixParts(ax,S.dig); if(f) return pad11(cellsFromString((neg?'-':' ')+group(f.ip)+'.'+f.fp)); }
+  return sciCells(neg,ax,S.dig,S.fmt==='ENG');
+}
+function entryCells(){
+  const has=E.m.includes('.'); let [ip,fp='']=E.m.split('.'); ip=ip||'0';
+  let c=cellsFromString((E.neg?'-':' ')+group(ip)+'.'+(has?fp:''));
+  if(E.e===null) return pad11(c);
+  c=c.slice(0,8); while(c.length<8) c.push({ch:' ',dp:null});
+  return c.concat(cellsFromString((E.eneg?'-':' ')+E.e.padStart(2,'0')));
+}
+function lineCells(n){
+  const ins=n>0?S.prog[n-1]:null;
+  const head=cellsFromString(' '+String(n).padStart(3,'0')+(ins&&ins.u?'u':'-'));
+  let body=[]; if(ins) body=cellsFromString(codeStr(codesOf(ins)));
+  while(body.length<6) body.unshift({ch:' ',dp:null});
+  return pad11(head.concat(body));
+}
+function flash(str,ms){ flashCells(pad11(cellsFromString(str)),ms); }
+function flashCells(cells,ms){ msg={cells}; clearTimeout(msgTimer); msgTimer=setTimeout(()=>{ msg=null; render(); },ms); }
+function displayCells(){
+  if(!S.on) return pad11([]);
+  if(msg) return msg.cells;
+  if(errorCode==='Pr') return pad11(cellsFromString(' Pr Error'));
+  if(errorCode!==null) return pad11(cellsFromString(' Error '+errorCode));
+  if(running&&!pauseShow) return pad11(cellsFromString(' running'));
+  if(S.prgm) return lineCells(S.pc);
+  if(E) return entryCells();
+  return numCells(S.x);
+}
+
+/* build the 7-segment LCD */
+const NS='http://www.w3.org/2000/svg';
+const hs=(x1,x2,y,t=2.7)=>`${x1},${y} ${x1+t},${y-t} ${x2-t},${y-t} ${x2},${y} ${x2-t},${y+t} ${x1+t},${y+t}`;
+const vs=(x,y1,y2,t=2.7)=>`${x},${y1} ${x+t},${y1+t} ${x+t},${y2-t} ${x},${y2} ${x-t},${y2-t} ${x-t},${y1+t}`;
+const SEGS={a:hs(8.5,27.5,5),b:vs(30,7,27.5),c:vs(30,30.5,51),d:hs(8.5,27.5,53),e:vs(6,30.5,51),f:vs(6,7,27.5),g:hs(8.5,27.5,29)};
+const cellEls=[];
+(function buildLCD(){
+  const host=$('digits');
+  for(let i=0;i<11;i++){
+    const svg=document.createElementNS(NS,'svg'); svg.setAttribute('viewBox','0 0 40 62'); svg.setAttribute('aria-hidden','true');
+    const g=document.createElementNS(NS,'g'); g.setAttribute('transform','translate(4 0) skewX(-5)');
+    const segs={};
+    for(const s in SEGS){ const p=document.createElementNS(NS,'polygon'); p.setAttribute('points',SEGS[s]); p.setAttribute('class','seg'); g.appendChild(p); segs[s]=p; }
+    const dp=document.createElementNS(NS,'circle'); dp.setAttribute('cx','35'); dp.setAttribute('cy','53'); dp.setAttribute('r','2.7'); dp.setAttribute('class','dpd'); g.appendChild(dp);
+    const cm=document.createElementNS(NS,'path'); cm.setAttribute('d','M36.2 55.5 L33.2 60.5'); cm.setAttribute('class','cm'); g.appendChild(cm);
+    svg.appendChild(g); host.appendChild(svg); cellEls.push({segs,dp,cm,last:''});
+  }
+})();
+function paintCell(i,cell){
+  let dp=cell.dp; if(S.sep&&dp) dp=dp==='.'?',':'.';
+  const el=cellEls[i], on=SEGMAP[cell.ch]??'', key=on+'|'+(dp||'');
+  if(el.last===key) return; el.last=key;
+  for(const s in el.segs) el.segs[s].classList.toggle('on',on.includes(s));
+  el.dp.classList.toggle('on',!!dp); el.cm.classList.toggle('on',dp===',');
+}
+
+/* build keys */
+(function buildKeys(){
+  const host=$('keys');
+  KEYS.forEach((K,i)=>{
+    let row,col; if(i<30){ row=Math.floor(i/10)+1; col=i%10+1; } else { row=4; const j=i-30; col=j<5?j+1:j+2; }
+    const cell=document.createElement('div'); cell.className='cell'+(K.c===36?' enter':'');
+    cell.style.gridRow=K.c===36?'3 / span 2':String(row); cell.style.gridColumn=String(col);
+    const fl=document.createElement('div'); fl.className='flab'; fl.textContent=K.f||''; cell.appendChild(fl);
+    const b=document.createElement('button'); b.type='button';
+    b.className='key'+(K.c===42?' kf':'')+(K.c===43?' kg':'');
+    b.dataset.code=K.c;
+    b.setAttribute('aria-label',K.m+(K.f?', f '+K.f:'')+(K.g?', g '+K.g:''));
+    const face=document.createElement('span'); face.className='face'; const fs=document.createElement('span'); fs.textContent=K.m; face.appendChild(fs);
+    const front=document.createElement('span'); front.className='front'; front.textContent=K.g||'';
+    b.append(face,front);
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ if(!busy) press(K.c); });
+    cell.appendChild(b); host.appendChild(cell);
+  });
+})();
+function pressVisual(code){ const b=document.querySelector('.key[data-code="'+code+'"]'); if(!b) return; b.classList.add('down'); setTimeout(()=>b.classList.remove('down'),130); }
+
+/* ---------- panels ---------- */
+function full(v){
+  if(isD(v)){ const m=mat(v); return v+'  '+m.r+'×'+m.c+(m.lu?' (LU)':''); }
+  if(v===0) return '0'; const a=Math.abs(v); if(a>=1e-4&&a<1e10) return String(parseFloat(v.toPrecision(10))); return v.toExponential(9).replace(/\.?0+e/,'e').replace('e+','e');
+}
+function cfull(re,im){ if(!CX()||isD(re)) return full(re); if(im===0) return full(re)+' + 0i'; return full(re)+(im<0?' − ':' + ')+full(Math.abs(im))+'i'; }
+const PHINT={sto:'STO: register 0–9, · digit, I (TAN), (i) (COS), or A–E for a matrix element. f MATRIX, f RESULT, g letter and f RAN# also work here. Press + − × ÷ first for storage arithmetic.',
+  rcl:'RCL: register 0–9, · digit, I (TAN), (i) (COS), or A–E for a matrix element. f MATRIX, f RESULT, f DIM, g letter and f RAN# also work here. Press + − × ÷ first for recall arithmetic.',
+  fix:'FIX: press 0–9, or I (TAN) to use RI.',sci:'SCI: press 0–9, or I (TAN).',eng:'ENG: press 0–9, or I (TAN).',
+  lbl:'LBL: press A–E (top row), a digit, or · then a digit.',gto:'GTO: label, I (TAN), or CHS then a 3-digit line number.',gtoline:'GTO CHS: key in a 3-digit line number.',gsb:'GSB: label A–E, digit, or I (TAN).',
+  solve:'SOLVE: press the label of your function program.',integ:'∫xy: press the label of your integrand program.',sf:'SF: flag 0–9 or I. Flag 8 turns on Complex mode.',cf:'CF: flag 0–9 or I. CF 8 leaves Complex mode; CF 9 stops the overflow blink.',fq:'F?: flag 0–9 or I.',
+  test:'TEST: 0 x≠0 · 1 x>0 · 2 x<0 · 3 x≥0 · 4 x≤0 · 5 x=y · 6 x≠y · 7 x>y · 8 x<y · 9 x≥y',dse:'DSE: loop-control register.',isg:'ISG: loop-control register.',
+  xch:'x⇄: register or matrix element to exchange with X.',hyp:'HYP: press SIN, COS or TAN.',ahyp:'HYP⁻¹: press SIN, COS or TAN.',
+  dim:'DIM: A–E dimensions that matrix to Y rows × X columns; I uses the matrix in RI; (i) sets the highest data register (memory allocation).',
+  matrix:'MATRIX: 0 clear all · 1 R0=R1=1 · 2 Zᴾ→Z̃ · 3 Z̃→Zᴾ · 4 transpose · 5 YᵀX · 6 residual · 7 row norm · 8 Frobenius norm · 9 determinant',
+  result:'RESULT: press A–E to choose the result matrix.'};
+const ERRTXT={0:'improper math operation',1:'improper matrix operation (a matrix descriptor where a number is needed)',2:'improper statistics operation',3:'improper register number or matrix element',4:'improper line number, missing label, or no room for another program line',5:'more than 7 subroutine levels, or R/S inside a SOLVE/∫ function',6:'improper flag number',7:'SOLVE inside SOLVE, ∫ inside ∫, or a function that never returns',8:'SOLVE found no root',9:'service (internal error)',10:'insufficient memory',11:'improper matrix argument',Pr:'Continuous Memory was reset'};
+function updateStatus(){
+  const st=$('status');
+  if(errorCode!==null) st.innerHTML='<b>'+(errorCode==='Pr'?'Pr Error':'Error '+errorCode)+'</b> · '+(ERRTXT[errorCode]||'')+'. Press any key to clear.';
+  else if(pending) st.textContent=(pending.sub==='mat'?'MATRIX: press A–E.':pending.sub==='dim'?'DIM: press A–E, I or (i).':PHINT[pending.t])||'';
+  else if(statusMsg) st.textContent=statusMsg;
+  else if(running) st.textContent='Program running. Press any key to stop.';
+  else if(S.prgm) st.textContent='Program mode: keystrokes are stored at line '+String(S.pc+1).padStart(3,'0')+'. Press g P/R to leave.';
+  else if(S.flags[9]) st.textContent='Overflow (flag 9). Press ← or g CF 9 to stop the blinking.';
+  else st.textContent='';
+}
+const REGHINT={2:'n',3:'Σx',4:'Σx²',5:'Σy',6:'Σy²',7:'Σxy'};
+let lastProgKey='';
+function esc(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function renderPanels(){
+  const I=S.im;
+  $('stack').innerHTML=[['T',S.t,I.t],['Z',S.z,I.z],['Y',S.y,I.y],['X',S.x,I.x],['LSTx',S.lastx,I.lastx]].map(([n,v,vi])=>`<dt class="${n==='X'?'x':''}">${n}</dt><dd class="${n==='X'?'x':''}">${esc(cfull(v,vi))}</dd>`).join('');
+  $('cxnote').textContent=CX()?'Complex mode is on (C). Values show real + imaginary parts.':'';
+  let r=`<div><span>RI</span><span>${esc(full(S.ri))}</span></div>`;
+  for(let i=0;i<=Math.min(S.dd,65);i++){ const nm=i<10?'R'+i:i<20?'R.'+(i-10):'R'+i; r+=`<div><span>${nm}${REGHINT[i]?' <i>'+REGHINT[i]+'</i>':''}</span><span>${esc(full(S.regs[i]))}</span></div>`; }
+  $('regs').innerHTML=r;
+  const b=progBytes();
+  $('memline').textContent=`Data registers R0–R${S.dd} · ${progRegs()} program registers (${b} bytes) · ${matElems()} matrix elements${CX()?' · 5 for the imaginary stack':''} · ${freeRegs()} free`;
+  let mh='';
+  for(const L of LET){
+    const m=mat(L);
+    mh+=`<div class="mat${S.res===L?' res':''}"><div class="mh"><b>${L}</b> ${m.r}×${m.c}${m.lu?' · LU form':''}${S.res===L?' · result':''}</div>`;
+    if(m.r*m.c){ mh+='<div class="mg"><table><tbody>'; for(let i=0;i<m.r;i++){ mh+='<tr>'; for(let j=0;j<m.c;j++) mh+=`<td>${esc(full(m.d[i*m.c+j]))}</td>`; mh+='</tr>'; } mh+='</tbody></table></div>'; }
+    mh+='</div>';
+  }
+  $('mats').innerHTML=mh;
+  const pk=progVer+'|'+S.pc+'|'+S.prog.length;
+  if(pk!==lastProgKey){
+    lastProgKey=pk;
+    const list=$('prog');
+    let h=`<li data-line="0" class="${S.pc===0?'cur':''}"><span class="ln">000</span><span class="kc"></span><span class="mn" style="color:var(--muted)">top of memory</span></li>`;
+    S.prog.forEach((ins,i)=>{ h+=`<li data-line="${i+1}" class="${S.pc===i+1?'cur ':''}${ins.k==='lbl'?'lbl':''}"><span class="ln">${String(i+1).padStart(3,'0')}${ins.u?'u':''}</span><span class="kc">${codeStr(codesOf(ins))}</span><span class="mn">${esc(mnemOf(ins))}</span></li>`; });
+    list.innerHTML=h;
+    const cur=list.querySelector('li.cur');
+    if(cur){ const top=cur.offsetTop; if(top<list.scrollTop||top>list.scrollTop+list.clientHeight-cur.offsetHeight) list.scrollTop=Math.max(0,top-list.clientHeight/2); }
+    $('proghint').textContent=S.prog.length?S.prog.length+' lines. Samples: A is x² − 2, B is e^(−x²), C is πr².':'Program memory is empty.';
+  }
+}
+function render(){
+  const cells=displayCells();
+  for(let i=0;i<11;i++) paintCell(i,cells[i]);
+  const lcd=$('lcd');
+  lcd.classList.toggle('blink',S.on&&!msg&&errorCode===null&&((running&&!pauseShow)||S.flags[9]));
+  const on=S.on;
+  $('aUSER').classList.toggle('on',on&&S.user);
+  $('aF').classList.toggle('on',on&&shift==='f');
+  $('aG').classList.toggle('on',on&&shift==='g');
+  const ang=$('aANG'); ang.textContent=S.ang==='GRAD'?'GRAD':'RAD'; ang.classList.toggle('on',on&&S.ang!=='DEG');
+  $('aC').classList.toggle('on',on&&CX());
+  $('aPRGM').classList.toggle('on',on&&S.prgm);
+  updateStatus();
+  renderPanels();
+}
+
+$('prog').addEventListener('click',e=>{ const li=e.target.closest('li'); if(!li||running) return; S.pc=+li.dataset.line; E=null; render(); save(); });
+
+/* ---------- examples ---------- */
+const EXAMPLES=[
+ {t:'Chain arithmetic',d:'(3 + 4) × 5, no parentheses needed.',k:[[3,'3'],[36,'ENTER'],[4,'4'],[40,'+'],[5,'5'],[20,'×']],r:'35.0000'},
+ {t:'Solve x² = 2',d:'Program A holds x² − 2. The two guesses go in Y and X.',k:[[1,'1'],[36,'ENTER'],[2,'2'],[42,'f'],[10,'SOLVE'],[11,'A']],r:'1.4142'},
+ {t:'Integrate e^(−x²) from 0 to 1',d:'Program B holds the integrand; the limits go in Y and X.',k:[[0,'0'],[36,'ENTER'],[1,'1'],[42,'f'],[20,'∫xy'],[12,'B']],r:'0.7468'},
+ {t:'Run a program',d:'Program C returns πr² for a radius of 5.',k:[[5,'5'],[42,'f'],[13,'C']],r:'78.5398'},
+ {t:'Complex arithmetic',d:'√(A ÷ B) for A = 1.2 + 4.7i and B = 2.7 + 3.2i, from the handbook. f (i) then shows the imaginary part.',
+  k:[[1,'1'],[48,'.'],[2,'2'],[36,'ENTER'],[4,'4'],[48,'.'],[7,'7'],[42,'f'],[25,'I'],[2,'2'],[48,'.'],[7,'7'],[36,'ENTER'],[3,'3'],[48,'.'],[2,'2'],[42,'f'],[25,'I'],[10,'÷'],[11,'√x'],[42,'f'],[24,'(i)']],r:'0.2406, then 1.0491',fast:true},
+ {t:'Solve two linear equations',d:'3.8x₁ + 7.2x₂ = 16.5 and 1.3x₁ − 0.9x₂ = −22.1, using matrices A, B and C as in the handbook.',
+  k:[[2,'2'],[36,'ENTER'],[42,'f'],[23,'DIM'],[11,'A'],[42,'f'],[16,'MATRIX'],[1,'1'],[42,'f'],[45,'USER'],
+     [3,'3'],[48,'.'],[8,'8'],[44,'STO'],[11,'A'],[7,'7'],[48,'.'],[2,'2'],[44,'STO'],[11,'A'],[1,'1'],[48,'.'],[3,'3'],[44,'STO'],[11,'A'],[48,'.'],[9,'9'],[16,'CHS'],[44,'STO'],[11,'A'],
+     [2,'2'],[36,'ENTER'],[1,'1'],[42,'f'],[23,'DIM'],[12,'B'],[1,'1'],[6,'6'],[48,'.'],[5,'5'],[44,'STO'],[12,'B'],[2,'2'],[2,'2'],[48,'.'],[1,'1'],[16,'CHS'],[44,'STO'],[12,'B'],
+     [42,'f'],[26,'RESULT'],[13,'C'],[45,'RCL'],[42,'f'],[16,'MATRIX'],[12,'B'],[45,'RCL'],[42,'f'],[16,'MATRIX'],[11,'A'],[10,'÷'],[45,'RCL'],[13,'C'],[42,'f'],[45,'USER']],r:'x₁ = −11.2887 (press RCL C again in USER mode for x₂)',fast:true},
+ {t:'Rectangular to polar',d:'Hypotenuse of a 3–4 right triangle. x⇄y then shows the angle.',k:[[4,'4'],[36,'ENTER'],[3,'3'],[43,'g'],[1,'→P']],r:'5.0000'},
+ {t:'Mean of three values',d:'Clear the statistics registers, then accumulate 2, 4 and 9.',k:[[42,'f'],[32,'CLEAR Σ'],[2,'2'],[49,'Σ+'],[4,'4'],[49,'Σ+'],[9,'9'],[49,'Σ+'],[43,'g'],[0,'x̄']],r:'5.0000'},
+ {t:'Gamma function',d:'0.5! equals Γ(1.5), which is √π ÷ 2.',k:[[48,'.'],[5,'5'],[42,'f'],[0,'x!']],r:'0.8862'},
+];
+(function buildExamples(){
+  const ul=$('examples');
+  EXAMPLES.forEach(ex=>{
+    const li=document.createElement('li');
+    let prev=null, chips='';
+    ex.k.forEach(([c,l])=>{ const cls=c===42?'cf':c===43?'cg':prev===42?'cf':prev===43?'cg':''; chips+=`<span class="chip ${cls}">${l}</span>`; prev=c; });
+    li.innerHTML=`<span class="t">${ex.t}</span><button class="btn" type="button">Run</button><span class="d">${ex.d}</span><span class="chips">${chips}</span><span class="res">Display shows <b>${ex.r}</b></span>`;
+    li.querySelector('button').addEventListener('click',()=>runExample(ex.k.map(p=>p[0]),ex.fast?110:240));
+    ul.appendChild(li);
+  });
+})();
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function runExample(seq,gap){
+  if(busy) return;
+  stopRun(); S.on=true; S.prgm=false; S.user=false; setFlag(8,false); E=null; shift=null; pending=null; errorCode=null; msg=null; statusMsg=''; render();
+  busy=true;
+  $('flip').classList.remove('over');
+  document.querySelector('.calc').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'nearest'});
+  await sleep(200);
+  for(const code of seq){ pressVisual(code); press(code); await sleep(gap); }
+  busy=false;
+}
+
+/* ---------- physical keyboard ---------- */
+const KB={'0':0,'1':1,'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'.':48,',':48,'Enter':36,'Backspace':35,'+':40,'-':30,'*':20,'/':10,
+  'f':42,'g':43,'s':44,'r':45,'x':34,'d':33,'n':16,'e':26,'q':11,'^':14,'i':15,' ':31,'t':21,'A':11,'B':12,'C':13,'D':14,'E':15,'o':41};
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  const t=e.target; if(t&&t.closest&&(t.closest('input,textarea,select'))) return;
+  if((e.key==='Enter'||e.key===' ')&&t&&t.closest&&t.closest('button')) return;
+  const code=KB[e.key]; if(code===undefined) return;
+  e.preventDefault(); if(busy) return;
+  pressVisual(code); press(code);
+});
+
+/* ---------- turn over, reset ---------- */
+$('turn').addEventListener('click',()=>{
+  const f=$('flip'), over=!f.classList.contains('over');
+  f.classList.toggle('over',over); $('backface').setAttribute('aria-hidden',String(!over));
+  $('turn').textContent=over?'Turn back to the keyboard':'Turn over for the reference card';
+});
+let armed=false, armTimer=null;
+$('reset').addEventListener('click',()=>{
+  const b=$('reset');
+  if(!armed){ armed=true; b.textContent='Click again to erase'; b.classList.add('warn'); $('resetNote').textContent='Clears registers, matrices, settings and programs, then reloads the samples.'; armTimer=setTimeout(()=>{ armed=false; b.textContent='Reset memory'; b.classList.remove('warn'); $('resetNote').textContent=''; },4000); return; }
+  clearTimeout(armTimer); armed=false; b.textContent='Reset memory'; b.classList.remove('warn');
+  stopRun(); S=fresh(); E=null; shift=null; pending=null; errorCode=null; msg=null; progVer++;
+  $('resetNote').textContent='Memory cleared.'; render(); save();
+});
+
+render();
+})();
+if('serviceWorker' in navigator)
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+</script>
+
+</body>
+</html>
